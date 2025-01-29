@@ -297,7 +297,7 @@ class RGBTiler:
                             if result:
                                 self.db.insert_tile_with_retry(*result, use_inverse_y=True)
                                 total_processed += 1
-                                print(f"Processed / tiles")
+                                print(f"Processed {total_processed}/{total_tiles} tiles")
                         
                         self.db.conn.commit()
                         print("Committed to database")
