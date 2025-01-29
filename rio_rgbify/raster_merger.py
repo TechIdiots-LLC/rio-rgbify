@@ -73,7 +73,8 @@ class RasterRGBMerger:
     def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX,
                  resampling=Resampling.lanczos, processes=None, default_tile_size=512,
                  output_image_format=ImageFormat.PNG, output_quantized_alpha=False,
-                 min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2, base_val=-10000, interval=0.1): # Add gaussian_blur_sigma
+                 min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2, base_val=-10000, interval=0.1,
+                 bounds_source=None):
         self.sources = sources
         self.output_path = Path(output_path)
         self.output_encoding = output_encoding
@@ -90,6 +91,7 @@ class RasterRGBMerger:
         self.gaussian_blur_sigma = gaussian_blur_sigma # Store the sigma for gaussian blur
         self.base_val = base_val # Store the base_val for mapbox output
         self.interval = interval # store the interval for mapbox output
+        self.bounds_source = bounds_source # Store the bounds_source parameter
         """
         Initializes the RasterRGBMerger.
 
@@ -122,47 +124,49 @@ class RasterRGBMerger:
         base_val: float, optional
             The base value for encoding mapbox output
         interval: float, optional
-           The interval for encoding mapbox output
+            The interval for encoding mapbox output
+        bounds_source: Optional[int]
+            The index of the source to use for the bounds and tiles, defaults to None
         """
 
     def _extract_tile(self, source: RasterSource, tile: mercantile.Tile, source_index: int, verbose=False) -> Optional[TileData]:
-      """Extract and decode a tile from a Raster, with no fallback to parent tiles"""
-      
-      bounds = mercantile.bounds(tile)
-      
-      try:
-        with rasterio.open(source.path) as src:
-            
-            window = rasterio.windows.from_bounds(*bounds, transform=src.transform)
-            
-            data = src.read(window=window, masked=True).astype(np.float32)
-            
-            if data.ndim == 3:
-                data = data[0] #Only use the first band
+        """Extract and decode a tile from a Raster, with no fallback to parent tiles"""
+        
+        bounds = mercantile.bounds(tile)
+        
+        try:
+            with rasterio.open(source.path) as src:
+                
+                window = rasterio.windows.from_bounds(*bounds, transform=src.transform)
+                
+                data = src.read(window=window, masked=True).astype(np.float32)
+                
+                if data.ndim == 3:
+                    data = data[0] #Only use the first band
 
-            data = ImageEncoder._mask_elevation(data, source.mask_values)
-            
-            #Apply height adjustment
-            data += source.height_adjustment
-            
-            meta = src.meta.copy()
-            
-            meta.update({
-                'count': 1,
-                'dtype': rasterio.float32,
-                'driver': 'GTiff',
-                'crs': 'EPSG:3857',
-                'transform': rasterio.transform.from_bounds(
-                    bounds.west, bounds.south, bounds.east, bounds.north,
-                    meta['width'], meta['height']
-                )
-            })
+                data = ImageEncoder._mask_elevation(data, source.mask_values)
+                
+                #Apply height adjustment
+                data += source.height_adjustment
+                
+                meta = src.meta.copy()
+                
+                meta.update({
+                    'count': 1,
+                    'dtype': rasterio.float32,
+                    'driver': 'GTiff',
+                    'crs': 'EPSG:3857',
+                    'transform': rasterio.transform.from_bounds(
+                        bounds.west, bounds.south, bounds.east, bounds.north,
+                        meta['width'], meta['height']
+                    )
+                })
 
-            return TileData(data, meta, tile.z)
+                return TileData(data, meta, tile.z)
 
-      except Exception as e:
-          self.logger.error(f"Error reading tile at zoom {tile.z} from source at {source.path} : {e}")
-          return None
+        except Exception as e:
+            self.logger.error(f"Error reading tile at zoom {tile.z} from source at {source.path} : {e}")
+            return None
 
     def _merge_tiles(self, tile_datas: List[Optional[TileData]], target_tile: mercantile.Tile) -> Optional[np.ndarray]:
         """Merge tiles from multiple sources, handling upscaling and priorities"""
@@ -187,11 +191,11 @@ class RasterRGBMerger:
             if tile_data is not None:
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
                 if result is None:
-                  result = resampled_data
+                    result = resampled_data
                 else:
-                  mask = ~np.isnan(resampled_data)
-                  if np.any(mask):
-                    result[mask] = resampled_data[mask]
+                    mask = ~np.isnan(resampled_data)
+                    if np.any(mask):
+                        result[mask] = resampled_data[mask]
         
         return result
 
@@ -298,34 +302,42 @@ class RasterRGBMerger:
             for x, y in _tile_range(mercantile.tile(w, n, zoom), mercantile.tile(e, s, zoom)):
                 tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
         else:
-            # Get tiles from the LAST source
-            source = self.sources[-1]
+            # Get tiles from the specified source, or the last one if it does not exist
+            if self.bounds_source is not None and 0 <= self.bounds_source < len(self.sources):
+                source = self.sources[self.bounds_source]
+            else:
+                source = self.sources[-1]
             with rasterio.open(source.path) as src:
                 
                 bounds = src.bounds
                 
                 w,s,e,n = bounds
                 for x, y in _tile_range(mercantile.tile(w, n, zoom), mercantile.tile(e, s, zoom)):
-                  tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
+                    tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
         return list(tiles)
 
     def get_max_zoom_level(self) -> int:
         """Get the maximum zoom level from the last source"""
-        with rasterio.open(self.sources[-1].path) as src:
+        # Get tiles from the specified source, or the last one if it does not exist
+        if self.bounds_source is not None and 0 <= self.bounds_source < len(self.sources):
+            source = self.sources[self.bounds_source]
+        else:
+            source = self.sources[-1]
+        with rasterio.open(source.path) as src:
             
             bounds = src.bounds
             
             max_zoom = mercantile.tile(bounds.west, bounds.north, self.min_zoom).z
             
             while True:
-              test_zoom = max_zoom + 1
-              test_tile = mercantile.tile(bounds.west, bounds.north, test_zoom)
-              test_bounds = mercantile.bounds(test_tile)
-              
-              if test_bounds.west < bounds.west or test_bounds.south < bounds.south or test_bounds.east > bounds.east or test_bounds.north > bounds.north:
-                break
-              else:
-                max_zoom = test_zoom
+                test_zoom = max_zoom + 1
+                test_tile = mercantile.tile(bounds.west, bounds.north, test_zoom)
+                test_bounds = mercantile.bounds(test_tile)
+                
+                if test_bounds.west < bounds.west or test_bounds.south < bounds.south or test_bounds.east > bounds.east or test_bounds.north > bounds.north:
+                    break
+                else:
+                    max_zoom = test_zoom
             
             return max_zoom
 
@@ -381,17 +393,12 @@ class RasterRGBMerger:
 def process_tile_task(task_tuple: tuple) -> None:
     """Standalone function for processing tiles that can be pickled"""
     tile, source_configs, output_path, output_encoding, resampling, output_format, output_alpha, base_val, interval, verbose = task_tuple
-    
+
     # Configure logging for each process
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
     logger = logging.getLogger(__name__)
     logger.debug(f"process_tile_task started for tile {tile.z}/{tile.x}/{tile.y}")
-    
+
     sources = []
-    db = None
     try:
         # Reconstruct MBTilesSource objects and create connections
         for path, height_adj, mask_vals in source_configs:
@@ -404,7 +411,7 @@ def process_tile_task(task_tuple: tuple) -> None:
 
         # create instance
         merger_instance = RasterRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), resampling=resampling, output_image_format=ImageFormat(output_format), output_quantized_alpha=output_alpha, base_val=base_val, interval=interval)
-            
+
         # Open database connection for the entire task
         with MBTilesDatabase(output_path) as db:
             # Extract tiles from all sources
@@ -412,16 +419,16 @@ def process_tile_task(task_tuple: tuple) -> None:
             for i, source in enumerate(sources):
                 tile_data = merger_instance._extract_tile(source, tile, i, verbose)
                 tile_datas.append(tile_data)
-            
+
             if not any(tile_datas):
-                logging.debug(f"No tile data for {tile.z}/{tile.x}/{tile.y}")
+                logger.debug(f"No tile data for {tile.z}/{tile.x}/{tile.y}")
                 return
 
             # Merge the elevation data
             merged_elevation = merger_instance._merge_tiles(tile_datas, tile)
             
             if merged_elevation is None:
-                logging.debug(f"No merged elevation {tile.z}/{tile.x}/{tile.y}")
+                logger.debug(f"No merged elevation {tile.z}/{tile.x}/{tile.y}")
                 return
             
             # Encode using output format
@@ -433,10 +440,9 @@ def process_tile_task(task_tuple: tuple) -> None:
                 quantized_alpha=output_alpha
             )
             image_bytes = ImageEncoder.save_rgb_to_bytes(rgb_data, output_format)
-            logging.debug(f"image_bytes {len(image_bytes)}")
+            logger.debug(f"image_bytes {len(image_bytes)}")
             # Write to output database
             db.insert_tile_with_retry([tile.x, tile.y, tile.z], image_bytes)
-
 
     except Exception as e:
         logging.error(f"Error processing tile {tile.z}/{tile.x}/{tile.y}: {e}")

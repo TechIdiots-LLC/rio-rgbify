@@ -219,7 +219,8 @@ def merge(config, workers, verbose):
                 max_zoom=config.get("max_zoom", None),
                 bounds=config.get("bounds", None),
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
-                processes=workers
+                processes=workers,
+                bounds_source = config.get("bounds_source", None)
             )
         elif output_type.lower() == 'raster':
             merger = RasterRGBMerger(
@@ -233,7 +234,8 @@ def merge(config, workers, verbose):
                 max_zoom=config.get("max_zoom", None),
                 bounds=config.get("bounds", None),
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
-                processes=workers
+                processes=workers,
+                bounds_source = config.get("bounds_source", None)
             )
 
 

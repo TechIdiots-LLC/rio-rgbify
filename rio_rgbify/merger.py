@@ -76,7 +76,8 @@ class TerrainRGBMerger:
     def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX,
                  resampling=Resampling.lanczos, processes=None, default_tile_size=512,
                  output_image_format=ImageFormat.PNG, output_quantized_alpha=False,
-                 min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2): # Add gaussian_blur_sigma
+                 min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2,
+                 bounds_source=None):
         self.sources = sources
         self.output_path = Path(output_path)
         self.output_encoding = output_encoding
@@ -90,7 +91,9 @@ class TerrainRGBMerger:
         self.max_zoom = max_zoom
         self.bounds = bounds
         self.write_queue = Queue()
-        self.gaussian_blur_sigma = gaussian_blur_sigma # Store the sigma for gaussian blur
+        self.gaussian_blur_sigma = gaussian_blur_sigma
+        self.bounds_source = bounds_source
+
         """
         Initializes the TerrainRGBMerger.
 
@@ -120,20 +123,9 @@ class TerrainRGBMerger:
             The bounding box to limit the tiles being generated, defaults to None. If None, the bounds of the last source will be used.
         gaussian_blur_sigma: float
             The sigma value to use for the gaussian blur filter, defaults to 0.2
+        bounds_source: Optional[int]
+            The index of the source to use for the bounds and tiles, defaults to None
         """
-        self.sources = sources
-        self.output_path = Path(output_path)
-        self.output_encoding = output_encoding
-        self.resampling = resampling
-        self.processes = processes or multiprocessing.cpu_count()
-        self.logger = logging.getLogger(__name__)
-        self.default_tile_size = default_tile_size
-        self.output_image_format = output_image_format
-        self.output_quantized_alpha = output_quantized_alpha
-        self.min_zoom = min_zoom
-        self.max_zoom = max_zoom
-        self.bounds = bounds
-        self.write_queue = Queue() # initialize the shared queue
     
     def _decode_tile(self, tile_data: bytes, tile: mercantile.Tile, encoding: EncodingType, source: MBTilesSource, source_index: int) -> Tuple[Optional[np.ndarray], dict]:
         """
@@ -380,50 +372,6 @@ class TerrainRGBMerger:
         except Exception as e:
             self.logger.error(f"Error processing tile {tile.z}/{tile.x}/{tile.y}: {e}")
             raise
-    
-    def _get_tiles_for_zoom(self, zoom: int, source_conns: Dict[Path, sqlite3.Connection]) -> List[mercantile.Tile]:
-        """Get list of tiles to process for a given zoom level
-        
-        Parameters
-        ----------
-        zoom : int
-            The zoom level for which to get the tiles
-            
-        Returns
-        -------
-        List[mercantile.Tile]
-            A list of mercantile.Tile objects for the given zoom level
-        """
-        print(f"_get_tiles_for_zoom called with zoom: ")
-        tiles = set()
-        
-        if self.bounds is not None:
-            w,s,e,n = self.bounds
-            for x, y in _tile_range(mercantile.tile(w, n, zoom), mercantile.tile(e, s, zoom)):
-                tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
-        else:
-            # Get tiles from the LAST source
-            source = self.sources[-1]
-            conn = source_conns[source.path]
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT DISTINCT tile_column, tile_row FROM tiles WHERE zoom_level = ?',
-                (zoom,)
-            )
-            rows = cursor.fetchall()
-            
-            if not rows:
-                self.logger.warning(f"No tiles found for zoom level {zoom} in source {source.path}")
-            else:
-                #self.logger.debug(f"Rows fetched for zoom level : ")
-                for row in rows:
-                    if isinstance(row, tuple) and len(row) == 2:
-                        x, y = row
-                        tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
-                    else:
-                        self.logger.warning(f"Skipping invalid row: {row}")
-        
-        return list(tiles)
 
     def process_zoom_level(self, zoom: int, verbose):
         """Process all tiles for a given zoom level in parallel"""
@@ -465,16 +413,18 @@ class TerrainRGBMerger:
                 conn.close()
 
     def _get_tiles_for_zoom(self, zoom: int, source_conns: Dict[Path, sqlite3.Connection]) -> List[mercantile.Tile]:
-        """Get list of tiles to process for a given zoom level"""
         tiles = set()
         
         if self.bounds is not None:
-            w, s, e, n = self.bounds
+            w,s,e,n = self.bounds
             for x, y in _tile_range(mercantile.tile(w, n, zoom), mercantile.tile(e, s, zoom)):
                 tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
         else:
-            # Get tiles from the LAST source
-            source = self.sources[-1]
+            # Get tiles from the specified source, or the last one if it does not exist
+            if self.bounds_source is not None and 0 <= self.bounds_source < len(self.sources):
+                source = self.sources[self.bounds_source]
+            else:
+                source = self.sources[-1]
             conn = source_conns[source.path]
             cursor = conn.cursor()
             cursor.execute(
@@ -484,7 +434,7 @@ class TerrainRGBMerger:
             rows = cursor.fetchall()
             
             if not rows:
-                self.logger.warning(f"No tiles found for zoom level {zoom} in source {self.sources[-1].path}")
+                self.logger.warning(f"No tiles found for zoom level {zoom} in source {source.path}")
             else:
                 #self.logger.debug(f"Rows fetched for zoom level : ")
                 for row in rows:
@@ -496,14 +446,21 @@ class TerrainRGBMerger:
         
         return list(tiles)
 
+
     def get_max_zoom_level(self) -> int:
         """Get the maximum zoom level from the last source"""
-        with sqlite3.connect(self.sources[-1].path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT MAX(zoom_level) FROM tiles")
-            result = cursor.fetchone()
-            max_zoom = result[0] if result and result[0] is not None else 0
-            return max_zoom
+        # Get tiles from the specified source, or the last one if it does not exist
+        if self.bounds_source is not None and 0 <= self.bounds_source < len(self.sources):
+            source = self.sources[self.bounds_source]
+        else:
+            source = self.sources[-1]
+
+        with sqlite3.connect(source.path) as conn:
+             cursor = conn.cursor()
+             cursor.execute("SELECT MAX(zoom_level) FROM tiles")
+             result = cursor.fetchone()
+             max_zoom = result[0] if result and result[0] is not None else 0
+             return max_zoom
 
     def process_all(self, min_zoom: int = 0, verbose = False):
         """Process all zoom levels"""

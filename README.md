@@ -125,8 +125,9 @@ The `merge` command makes use of a json configuration file which should be passe
     "output_quantized_alpha": true,
     "min_zoom": 2,
     "max_zoom": 10,
+    "gaussian_blur_sigma": 0.2,
     "bounds": [-10,10,20,50],
-    "gaussian_blur_sigma": 0.2
+    "bounds_source": 1
 }
 ```
 
@@ -155,7 +156,7 @@ The `merge` command makes use of a json configuration file which should be passe
     "min_zoom": 2,
     "max_zoom": 10,
     "bounds": [-10,10,20,50],
-    "gaussian_blur_sigma": 0.2
+    "bounds_source": 1
 }
 ```
 
@@ -184,7 +185,8 @@ The `merge` command makes use of a json configuration file which should be passe
 *   `output_quantized_alpha` (Optional, Default: `false`): A boolean to determine if an alpha channel with quantized data should be added if the output is terrarium.
 *   `min_zoom` (Optional, Default: `0`): The minimum zoom level to process.
 *   `max_zoom` (Optional, Default: uses max from last file): The maximum zoom level to process.
-*   `bounds` (Optional, Default: bounds of last file): A bounding box to limit the tiles being generated. Should be in the format: `[w,s,e,n]`
+*  `bounds` (Optional, Default: bounds of last file): A bounding box to limit the tiles being generated. Should be in the format: `[w,s,e,n]`. **Overrides `bounds_source` if set**.
+*  `bounds_source` (Optional, Default: Uses last source): An integer which corresponds to the source in the `sources` array which should be used to generate bounds and tiles from. **The index starts at 0.**
 * `gaussian_blur_sigma` (Optional, Default: `0.2`): A floating-point value that controls the base strength of the gaussian blur applied to source tiles during upscaling. The actual blur applied is scaled based on the zoom level difference between the source and the output tile.
 
   **Understanding Zoom-Level Dependent Blurring:**
@@ -201,7 +203,7 @@ The `merge` command makes use of a json configuration file which should be passe
     As the `gaussian_blur_sigma` now acts as a base value, a good start is to aim for the ideal smoothing at a single zoom difference. For example if you want 0.4 smoothing when the zoom difference is 2, then use 0.2.
     Start with the default (`0.2`) and experiment, using higher values if the upscaling looks too "bumpy" or if you want more smoothing, and lower values if you think its too blurry.
 
-The merge logic works by merging the input sources in order, applying the height adjustment as it merges. The last input source will be the base layer for tiles, and the bounds of this last file will be used if no bounds are passed in.
+The merge logic works by merging the input sources in order, applying the height adjustment as it merges. The last input source will be the base layer for tiles, and the bounds of this last file will be used if no bounds are passed in, unless a `bounds_source` parameter has been set.
 
 ## Merge Example
 
