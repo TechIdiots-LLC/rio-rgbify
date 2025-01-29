@@ -10,6 +10,8 @@ import functools
 import logging
 import mercantile
 import json
+import rasterio
+from rasterio.warp import transform_bounds
 
 def retry(attempts, base_delay=1, max_delay=10):
     def decorator(func):
@@ -136,17 +138,21 @@ class MBTilesDatabase:
     
     def add_bounds_center_metadata(self, bounds: Optional[List[float]], min_zoom: int, max_zoom: int, encoding: str, format: str, name: str = "Terrain"):
         """Adds bounds and center metadata, along with format, name, description and version."""
+        
         if bounds is None:
-            bounds_str = '-180,-90,180,90'  # Default for the whole planet
+           
+            # Default bounds for the world
+            bounds_str = '-180,-90,180,90'
             center_lon = 0
             center_lat = 0
         else:
-            w, s, e, n = bounds
-            bounds_str = f'{w},{s},{e},{n}'
-            center_lon = (w + e) / 2
-            center_lat = (n + s) / 2
-            
+             w, s, e, n = bounds
+             bounds_str = f'{w},{s},{e},{n}'
+             center_lon = (w + e) / 2
+             center_lat = (n + s) / 2
+
         center_zoom = int((min_zoom + max_zoom) / 2)
+        center_str = f'{center_lon},{center_lat},{center_zoom}'
 
         self.add_metadata({
             "format": format,
@@ -158,7 +164,7 @@ class MBTilesDatabase:
             "maxzoom": max_zoom,
             "encoding": encoding,
             "bounds": bounds_str,
-            "center": f'{center_lon},{center_lat},{center_zoom}'
+            "center": center_str
         })
 
     @contextmanager

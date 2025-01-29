@@ -231,14 +231,18 @@ class RGBTiler:
             if self.bounding_tile is None:
                 bbox = list(src.bounds)
                 tiles = list(self._make_tiles(bbox, src.crs, self.min_z, self.max_z, verbose = verbose))
+                # Transform bounds from source CRS to EPSG:4326
+                w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *bbox)
+                bounds = [w, s, e, n]
             else:
                 constrained_bbox = list(mercantile.bounds(self.bounding_tile))
                 tiles = list(self._make_tiles(constrained_bbox, "EPSG:4326", self.min_z, self.max_z, verbose = verbose))
+                bounds = constrained_bbox
             print(f"Type of tiles: {type(tiles)}")
             print(f"tiles before sending to imap: {tiles[0:10]}") #print the first 10 tiles
 
             total_tiles = len(tiles)
-            print(f"Total tiles to process: {total_tiles}")
+            print(f"Total tiles to process: ")
 
             # Smart process scaling - use fewer processes for fewer tiles
             if processes is None or processes <= 0:
@@ -252,7 +256,7 @@ class RGBTiler:
             if batch_size is None:
                 batch_size = max(1, total_tiles // (processes * 2))   # Ensure at least 1
             
-            print(f"Running with {processes} processes and batch size of {batch_size}")
+            print(f"Running with  processes and batch size of ")
 
         # Multiprocessing implementation for all tiles
         ctx = get_context("fork")
@@ -271,13 +275,8 @@ class RGBTiler:
         )
 
         with self.db:
-            
-            if self.bounding_tile is None:
-                bbox = list(src.bounds)
-                self.db.add_bounds_center_metadata(bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
-            else:
-                constrained_bbox = list(mercantile.bounds(self.bounding_tile))
-                self.db.add_bounds_center_metadata(constrained_bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
+            self.db.add_bounds_center_metadata(bounds, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
+
             
             with ctx.Pool(processes, initializer=self._init_worker) as pool:
                 try:
@@ -309,7 +308,7 @@ class RGBTiler:
     def __enter__(self):
         try:
             self.db = MBTilesDatabase(self.outpath)
-        except Exception as e:
+        except Excepprint(f"Processed {total_processed}/{total_tiles} tiles")tion as e:
             logging.error(f"Failed to initialize database: {e}")
             self.db = None
             raise
