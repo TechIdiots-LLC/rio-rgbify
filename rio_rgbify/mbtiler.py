@@ -256,7 +256,7 @@ class RGBTiler:
             if batch_size is None:
                 batch_size = max(1, total_tiles // (processes * 2))   # Ensure at least 1
             
-            print(f"Running with  processes and batch size of ")
+            print(f"Running with {processes} processes and batch size of {batch_size}")
 
         # Multiprocessing implementation for all tiles
         ctx = get_context("fork")
