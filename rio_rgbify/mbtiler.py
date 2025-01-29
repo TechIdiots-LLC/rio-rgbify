@@ -318,7 +318,7 @@ class RGBTiler:
     def __enter__(self):
         try:
             self.db = MBTilesDatabase(self.outpath)
-        except Excepprint(f"Processed {total_processed}/{total_tiles} tiles")tion as e:
+        except Exception as e:
             logging.error(f"Failed to initialize database: {e}")
             self.db = None
             raise
