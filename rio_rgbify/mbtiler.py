@@ -242,7 +242,7 @@ class RGBTiler:
             print(f"tiles before sending to imap: {tiles[0:10]}") #print the first 10 tiles
 
             total_tiles = len(tiles)
-            print(f"Total tiles to process: ")
+            print(f"Total tiles to process: {total_tiles}")
 
             # Smart process scaling - use fewer processes for fewer tiles
             if processes is None or processes <= 0:
@@ -290,7 +290,8 @@ class RGBTiler:
                             
                         #Adjust chunk size based on the remaining tiles, and the amount of available processes
                         chunk_size = max(1, min(batch_size, len(current_tiles) // processes or len(current_tiles)))
-
+                        
+                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}")
 
                         for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
                             if result:
