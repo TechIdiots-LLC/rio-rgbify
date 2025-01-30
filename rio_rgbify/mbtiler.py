@@ -255,7 +255,7 @@ class RGBTiler:
             if batch_size is None:
                 batch_size = max(1, total_tiles // (processes * 2))   # Ensure at least 1
             
-            print(f"Running with {processes} processes and batch size of {batch_size}")
+            print(f"Running with  processes and batch size of ")
 
         # Multiprocessing implementation for all tiles
         ctx = get_context("fork")
@@ -284,12 +284,31 @@ class RGBTiler:
             
             with ctx.Pool(processes, initializer=self._init_worker) as pool:
                 try:
-                   
-                    for i, result in enumerate(pool.imap_unordered(process_func, tiles, chunksize=batch_size), 1):
-                        if result:
-                            self.db.insert_tile_with_retry(*result, use_inverse_y=True)
+                    total_processed = 0
+                    
+                    tiles_iter = iter(tiles)  # Create an iterator for tiles
+                    
+                    while True:
+                        current_tiles = list(itertools.islice(tiles_iter, batch_size))
+                        if not current_tiles:
+                            break  # Break if no more tiles
+                        
+                        remaining_tiles = total_tiles - total_processed
+                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
+                        
+                        chunk_size = batch_size
+                        if remaining_tiles < batch_size:
+                            chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
+                        
+                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
 
-                        if i % batch_size == 0 or i == total_tiles:   # Commit after each batch or at the end
+                        for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
+                            if result:
+                                self.db.insert_tile_with_retry(*result, use_inverse_y=True)
+                                total_processed += 1
+                                print(f"Processed {total_processed}/{total_tiles} tiles")
+                        
+                        if total_processed % batch_size == 0 or total_processed == total_tiles:   # Commit after each batch or at the end
                             self.db.conn.commit()
                             print("Committed to database")
 
