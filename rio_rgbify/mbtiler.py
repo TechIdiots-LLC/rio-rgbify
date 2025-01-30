@@ -293,7 +293,7 @@ class RGBTiler:
                         # Adjust chunksize based on the remaining tiles, and the amount of available processes
                         chunk_size = batch_size
                         remaining_tiles = total_tiles - total_processed
-                        if remaining_tiles < batch_size:
+                        if remaining_tiles <= batch_size:
                              chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
 
                         current_tiles = list(itertools.islice(tiles_iter, chunk_size))
