@@ -289,16 +289,18 @@ class RGBTiler:
                     tiles_iter = iter(tiles)  # Create an iterator for tiles
                     
                     while True:
-                        current_tiles = list(itertools.islice(tiles_iter, batch_size))
+                        
+                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
+                        chunk_size = batch_size
+                        remaining_tiles = total_tiles - total_processed
+                        if remaining_tiles < batch_size:
+                             chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
+
+                        current_tiles = list(itertools.islice(tiles_iter, chunk_size))
+                        
                         if not current_tiles:
                             break  # Break if no more tiles
-                        
-                        remaining_tiles = total_tiles - total_processed
-                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
-                        
-                        chunk_size = batch_size
-                        if remaining_tiles < batch_size:
-                            chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
+
                         
                         print(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
 
