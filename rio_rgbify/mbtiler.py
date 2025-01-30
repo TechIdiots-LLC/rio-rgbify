@@ -242,7 +242,7 @@ class RGBTiler:
             print(f"tiles before sending to imap: {tiles[0:10]}") #print the first 10 tiles
 
             total_tiles = len(tiles)
-            print(f"Total tiles to process: {total_tiles}")
+            print(f"Total tiles to process: ")
 
             # Smart process scaling - use fewer processes for fewer tiles
             if processes is None or processes <= 0:
@@ -256,7 +256,7 @@ class RGBTiler:
             if batch_size is None:
                 batch_size = max(1, total_tiles // (processes * 2))   # Ensure at least 1
             
-            print(f"Running with {processes} processes and batch size of {batch_size}")
+            print(f"Running with  processes and batch size of ")
 
         # Multiprocessing implementation for all tiles
         ctx = get_context("fork")
@@ -275,41 +275,18 @@ class RGBTiler:
         )
 
         with self.db:
-            
-            if self.bounding_tile is None:
-                bbox = list(src.bounds)
-                self.db.add_bounds_center_metadata(bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
-            else:
-                constrained_bbox = list(mercantile.bounds(self.bounding_tile))
-                self.db.add_bounds_center_metadata(constrained_bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
-            
+            self.db.add_bounds_center_metadata(bounds, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
+
             with ctx.Pool(processes, initializer=self._init_worker) as pool:
                 try:
                     total_processed = 0
-                    
-                    tiles_iter = iter(tiles)  # Create an iterator for tiles
-                    
-                    while True:
-                        current_tiles = list(itertools.islice(tiles_iter, batch_size))
-                        if not current_tiles:
-                            break  # Break if no more tiles
+                    for i, result in enumerate(pool.imap_unordered(process_func, tiles, chunksize=batch_size), 1):
+                        if result:
+                            self.db.insert_tile_with_retry(*result, use_inverse_y=True)
+                            total_processed += 1
+                            print(f"Processed {total_processed}/{total_tiles} tiles")
                         
-                        remaining_tiles = total_tiles - total_processed
-                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
-                        if remaining_tiles <= batch_size:
-                            chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
-                        else:
-                           chunk_size = batch_size
-                        
-                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
-
-                        for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
-                            if result:
-                                self.db.insert_tile_with_retry(*result, use_inverse_y=True)
-                                total_processed += 1
-                                print(f"Processed {total_processed}/{total_tiles} tiles")
-                        
-                        if total_processed % batch_size == 0 or total_processed == total_tiles: # Commit after each batch or at the end
+                        if i % batch_size == 0 or i == total_tiles:   # Commit after each batch or at the end
                             self.db.conn.commit()
                             print("Committed to database")
 
