@@ -224,42 +224,33 @@ class RGBTiler:
 
     def run(self, processes=None, batch_size=None, verbose=False):
         """Main processing loop with smart process scaling"""
-        print(f"self.inpath {self.inpath}")
         with rasterio.open(self.inpath) as src:
-            # generator of tiles to make
+            # Set up bounds and tiles
             if self.bounding_tile is None:
                 bbox = list(src.bounds)
-                tiles = list(self._make_tiles(bbox, src.crs, self.min_z, self.max_z, verbose = verbose))
-                # Transform bounds from source CRS to EPSG:4326
-                w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *bbox)
-                bounds = [w, s, e, n]
+                tiles = list(self._make_tiles(bbox, src.crs, self.min_z, self.max_z, verbose=verbose))
+                bounds = transform_bounds(src.crs, "EPSG:4326", *bbox)
             else:
                 constrained_bbox = list(mercantile.bounds(self.bounding_tile))
-                tiles = list(self._make_tiles(constrained_bbox, "EPSG:4326", self.min_z, self.max_z, verbose = verbose))
+                tiles = list(self._make_tiles(constrained_bbox, "EPSG:4326", self.min_z, self.max_z, verbose=verbose))
                 bounds = constrained_bbox
-            print(f"Type of tiles: {type(tiles)}")
-            print(f"tiles before sending to imap: {tiles[0:10]}") #print the first 10 tiles
 
             total_tiles = len(tiles)
             print(f"Total tiles to process: {total_tiles}")
 
-            # Smart process scaling - use fewer processes for fewer tiles
+            # Smart process scaling
             if processes is None or processes <= 0:
-                # Scale processes based on tile count and CPU count
-                processes = cpu_count() - 1   # Leave one CPU free
-            
-            # Ensure processes does not exceed tile count
+                processes = max(1, cpu_count() - 1)  # Leave one CPU free
             processes = min(total_tiles, processes)
 
-            # Adjust batch size based on total tiles
+            # Calculate initial batch size
             if batch_size is None:
-                batch_size = max(1, total_tiles // (processes * 2))   # Ensure at least 1
-            
-            print(f"Running with  processes and batch size of ")
+                batch_size = max(1, min(1000, total_tiles // (processes * 2)))
 
-        # Multiprocessing implementation for all tiles
+            print(f"Running with {processes} processes and initial batch size of {batch_size}")
+
+        # Set up multiprocessing
         ctx = get_context("fork")
-        
         process_func = functools.partial(
             process_tile,
             self.inpath,
@@ -270,52 +261,50 @@ class RGBTiler:
             self.round_digits,
             self.resampling,
             self.quantized_alpha,
-            verbose=verbose # Changed to keyword argument
+            verbose=verbose
         )
 
         with self.db:
-            
+            # Add metadata
             if self.bounding_tile is None:
-                bbox = list(src.bounds)
                 self.db.add_bounds_center_metadata(bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
             else:
-                constrained_bbox = list(mercantile.bounds(self.bounding_tile))
                 self.db.add_bounds_center_metadata(constrained_bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
-            
+
             with ctx.Pool(processes, initializer=self._init_worker) as pool:
                 try:
                     total_processed = 0
-                    
-                    tiles_iter = iter(tiles)  # Create an iterator for tiles
-                    
-                    while True:
-                        
-                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
-                        chunk_size = batch_size
-                        remaining_tiles = total_tiles - total_processed
-                        if remaining_tiles <= batch_size:
-                             chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
+                    tiles_remaining = tiles  # Start with all tiles
 
-                        current_tiles = list(itertools.islice(tiles_iter, chunk_size))
+                    while tiles_remaining:
+                        # Dynamically adjust chunk size based on remaining tiles and processes
+                        remaining_count = len(tiles_remaining)
+                        current_chunk_size = min(
+                            batch_size,
+                            max(1, remaining_count // processes)
+                        )
                         
-                        if not current_tiles:
-                            break  # Break if no more tiles
+                        # Process current batch
+                        current_batch = tiles_remaining[:current_chunk_size * processes]
+                        tiles_remaining = tiles_remaining[current_chunk_size * processes:]
 
-                        
-                        print(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
+                        print(f"Processing batch with chunk size: {current_chunk_size}")
+                        print(f"Remaining tiles: {remaining_count}")
+                        print(f"Active processes: {len(pool._pool)}")
 
-                        for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
+                        # Process the current batch
+                        for result in pool.imap_unordered(process_func, current_batch, chunksize=current_chunk_size):
                             if result:
                                 self.db.insert_tile_with_retry(*result, use_inverse_y=True)
                                 total_processed += 1
-                                print(f"Processed {total_processed}/{total_tiles} tiles")
-                        
-                        if total_processed % batch_size == 0 or total_processed == total_tiles:   # Commit after each batch or at the end
-                            self.db.conn.commit()
-                            print("Committed to database")
+                                
+                                if total_processed % 100 == 0:  # Progress update
+                                    print(f"Processed {total_processed}/{total_tiles} tiles")
 
-                    print(f"Completed processing {total_processed} tiles")
-                
+                        # Commit after each batch
+                        self.db.conn.commit()
+                        print(f"Committed batch to database. {total_processed}/{total_tiles} total tiles processed")
+
                 except KeyboardInterrupt:
                     print("Caught KeyboardInterrupt, terminating workers")
                     pool.terminate()
