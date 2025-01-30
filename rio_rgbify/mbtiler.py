@@ -275,7 +275,13 @@ class RGBTiler:
         )
 
         with self.db:
-            self.db.add_bounds_center_metadata(bounds, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
+            
+            if self.bounding_tile is None:
+                bbox = list(src.bounds)
+                self.db.add_bounds_center_metadata(bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
+            else:
+                constrained_bbox = list(mercantile.bounds(self.bounding_tile))
+                self.db.add_bounds_center_metadata(constrained_bbox, self.min_z, self.max_z, self.encoding, self.format, "Terrain")
             
             with ctx.Pool(processes, initializer=self._init_worker) as pool:
                 try:
@@ -287,11 +293,15 @@ class RGBTiler:
                         current_tiles = list(itertools.islice(tiles_iter, batch_size))
                         if not current_tiles:
                             break  # Break if no more tiles
-                            
-                        #Adjust chunk size based on the remaining tiles, and the amount of available processes
-                        chunk_size = max(1, min(batch_size, len(current_tiles) // processes or len(current_tiles)))
                         
-                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}")
+                        remaining_tiles = total_tiles - total_processed
+                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
+                        if remaining_tiles <= batch_size:
+                            chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
+                        else:
+                           chunk_size = batch_size
+                        
+                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
 
                         for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
                             if result:
@@ -299,8 +309,9 @@ class RGBTiler:
                                 total_processed += 1
                                 print(f"Processed {total_processed}/{total_tiles} tiles")
                         
-                        self.db.conn.commit()
-                        print("Committed to database")
+                        if total_processed % batch_size == 0 or total_processed == total_tiles: # Commit after each batch or at the end
+                            self.db.conn.commit()
+                            print("Committed to database")
 
                     print(f"Completed processing {total_processed} tiles")
                 
