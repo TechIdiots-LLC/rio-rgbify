@@ -222,7 +222,6 @@ class RGBTiler:
     def _init_worker(self):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-
     def run(self, processes=None, batch_size=None, verbose=False):
         """Main processing loop with smart process scaling"""
         print(f"self.inpath {self.inpath}")
@@ -285,31 +284,12 @@ class RGBTiler:
             
             with ctx.Pool(processes, initializer=self._init_worker) as pool:
                 try:
-                    total_processed = 0
-                    
-                    tiles_iter = iter(tiles)  # Create an iterator for tiles
-                    
-                    while True:
-                        current_tiles = list(itertools.islice(tiles_iter, batch_size))
-                        if not current_tiles:
-                            break  # Break if no more tiles
-                        
-                        remaining_tiles = total_tiles - total_processed
-                        # Adjust chunksize based on the remaining tiles, and the amount of available processes
-                        if remaining_tiles <= batch_size:
-                            chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
-                        else:
-                           chunk_size = batch_size
-                        
-                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
+                   
+                    for i, result in enumerate(pool.imap_unordered(process_func, tiles, chunksize=batch_size), 1):
+                        if result:
+                            self.db.insert_tile_with_retry(*result, use_inverse_y=True)
 
-                        for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
-                            if result:
-                                self.db.insert_tile_with_retry(*result, use_inverse_y=True)
-                                total_processed += 1
-                                print(f"Processed {total_processed}/{total_tiles} tiles")
-                        
-                        if total_processed % batch_size == 0 or total_processed == total_tiles: # Commit after each batch or at the end
+                        if i % batch_size == 0 or i == total_tiles:   # Commit after each batch or at the end
                             self.db.conn.commit()
                             print("Committed to database")
 
