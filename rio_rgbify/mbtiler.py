@@ -300,7 +300,7 @@ class RGBTiler:
                         if remaining_tiles < batch_size:
                             chunk_size =  max(1, min(batch_size, remaining_tiles // processes or remaining_tiles))
                         
-                        logging.debug(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
+                        print(f"Chunk size: {chunk_size}, len(current_tiles): {len(current_tiles)}, processes: {processes}, batch_size: {batch_size}, total_processed: {total_processed}, remaining_tiles: {remaining_tiles}")
 
                         for i, result in enumerate(pool.imap_unordered(process_func, current_tiles, chunksize=chunk_size),1):
                             if result:
