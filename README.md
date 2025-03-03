@@ -81,7 +81,7 @@ rio rgbify -e terrarium --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt DST_
 The `merge` command is used to merge multiple MBTiles or Raster files into one output MBTiles file. This is done by taking a JSON configuration file.
 
 ```
-Usage: rio rgbify merge [OPTIONS]
+Usage: rio merge [OPTIONS]
 
 Options:
  -c, --config PATH       Path to the JSON configuration file [required]
@@ -207,10 +207,10 @@ The merge logic works by merging the input sources in order, applying the height
 
 To merge mbtiles:
 ```
-rio rgbify merge --config config.json -j 24
+rio merge --config config.json -j 24
 ```
 
 To merge rasters:
 ```
-rio rgbify merge --config config.json -j 24
+rio merge --config config.json -j 24
 ```
