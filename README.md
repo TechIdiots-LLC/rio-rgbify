@@ -209,12 +209,6 @@ The merge logic works by merging the input sources in order, applying the height
 
 ## Merge Example
 
-To merge mbtiles:
-```
-rio merge --config config.json -j 24
-```
-
-To merge rasters:
 ```
 rio merge --config config.json -j 24
 ```
