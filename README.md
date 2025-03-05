@@ -39,35 +39,39 @@ The `rgbify` command is used to encode a raster into RGB and output it as a GeoT
 -   Output can be a GeoTIFF or an MBTiles file, both created using tile-based processing.
 
 ```
-Usage: rio rgbify rgbify [OPTIONS] SRC_PATH DST_PATH
+Usage: rio rgbify [OPTIONS] SRC_PATH DST_PATH
+
+  rio-rgbify cli.
 
 Options:
-    -b, --base-val FLOAT              The base value of which to base the output
-                                     encoding on (Mapbox only) [DEFAULT=0]
-    -i, --interval FLOAT              Describes the precision of the output, by
-                                     incrementing interval (Mapbox only) [DEFAULT=1]
-    -r, --round-digits INTEGER        Less significants encoded bits to be set to
-                                     0. Round the values, but have better images
-                                     compression [DEFAULT=0]
-    -e, --encoding [mapbox|terrarium]  RGB encoding to use on the tiles
-    --bidx INTEGER                     Band to encode [DEFAULT=1]
-    --max-z INTEGER                    Maximum zoom to tile
-    --bounding-tile TEXT              Bounding tile '[, , ]' to limit
-                                     output tiles
-    --min-z INTEGER                    Minimum zoom to tile
-    --format [png|webp]                Output tile format
-    -j, --workers INTEGER              Workers to run [DEFAULT=4]
-    -v, --verbose
-    --help                           Show this message and exit.
+  -b, --base-val FLOAT            The base value of which to base the output
+                                  encoding on [DEFAULT=0]
+  -i, --interval FLOAT            Describes the precision of the output, by
+                                  incrementing interval [DEFAULT=1]
+  -r, --round-digits INTEGER      Less significants encoded bits to be set to
+                                  0. Round the values, but have better images
+                                  compression [DEFAULT=0]
+  -e, --encoding [mapbox|terrarium]
+                                  RGB encoding to use on the tiles
+  --bidx INTEGER                  Band to encode [DEFAULT=1]
+  --max-z INTEGER                 Maximum zoom to tile (.mbtiles output only)
+  --bounding-tile TEXT            Bounding tile '[, , ]' to limit output tiles
+                                  (.mbtiles output only)
+  --min-z INTEGER                 Minimum zoom to tile (.mbtiles output only)
+  --format [png|webp]             Output tile format (.mbtiles output only)
+  -j, --workers INTEGER           Workers to run [DEFAULT=4]
+  -v, --verbose
+  --batch-size INTEGER            Number of tiles to process at a time in each
+                                  process.
+  --resampling [nearest|bilinear|cubic|cubic_spline|lanczos|average|mode|gaussian]
+                                  Resampling method
+  --help                          Show this message and exit
 ```
 
 ### Mapbox TerrainRGB example
 
 ```
 rio rgbify -e mapbox -b -10000 -i 0.1 --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt DST_PATH.mbtiles
-```
-```
-rio rgbify -e mapbox -b -10000 -i 0.1 --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt DST_PATH.tif
 ```
 
 ### Mapzen Terrarium example
