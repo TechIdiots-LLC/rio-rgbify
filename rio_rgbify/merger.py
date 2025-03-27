@@ -420,6 +420,7 @@ class TerrainRGBMerger:
         tiles = set()
         
         if self.bounds is not None:
+            print(f"self.bounds {self.bounds}")
             w,s,e,n = self.bounds
             for x, y in _tile_range(mercantile.tile(w, n, zoom), mercantile.tile(e, s, zoom)):
                 tiles.add(mercantile.Tile(x=x, y=y, z=zoom))

@@ -10,10 +10,15 @@ from rasterio.enums import Resampling
 from typing import List
 import rasterio as rio
 import numpy as np
-from rasterio.warp import transform  # Import transform
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# def _rgb_worker(data, window, ij, g_args): # Removed _rgb_worker function
+#    return data_to_rgb(
+#        data[0][g_args["bidx"] - 1], g_args["encoding"], g_args["base_val"], g_args["interval"], g_args["round_digits"]
+#    )
 
 
 @click.group(
@@ -198,13 +203,14 @@ def merge(config, workers, verbose):
                 )
 
         bounds = config.get("bounds", None)
-        if bounds:
-            # Transform bounds to Web Mercator
-            west, south, east, north = bounds
-            xs, ys = transform('EPSG:4326', 'EPSG:3857', [west, east], [south, north])  # Correct usage
-            transformed_bounds = [xs[0], ys[0], xs[1], ys[1]]
-        else:
-            transformed_bounds = None
+        #transformed_bounds = None # Delete this
+        # if bounds: # Delete the if conditional here
+        #     # Transform bounds to Web Mercator
+        #     west, south, east, north = bounds
+        #     xs, ys = transform('EPSG:4326', 'EPSG:3857', [west, east], [south, north])  # Correct usage
+        #     transformed_bounds = [xs[0], ys[0], xs[1], ys[1]]
+        # else:
+        #     transformed_bounds = None
 
         if output_type.lower() == 'mbtiles':
             merger = TerrainRGBMerger(
@@ -217,7 +223,7 @@ def merge(config, workers, verbose):
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
-                bounds=transformed_bounds,  # Use transformed bounds!
+                bounds=bounds,
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
                 processes=workers,
                 bounds_source = config.get("bounds_source", None)
@@ -233,7 +239,7 @@ def merge(config, workers, verbose):
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
-                bounds=transformed_bounds,  # Use transformed bounds!
+                bounds=bounds,  # Revert to using the *original* bounds
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
                 processes=workers,
                 bounds_source = config.get("bounds_source", None)
