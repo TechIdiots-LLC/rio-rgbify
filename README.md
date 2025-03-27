@@ -124,6 +124,7 @@ The `merge` command makes use of a json configuration file which should be passe
     ],
     "output_path": "/path/to/output.mbtiles",
     "output_encoding": "mapbox",
+    "output_nodata": -9999,
     "output_format": "webp",
     "resampling": "bilinear",
     "output_quantized_alpha": true,
@@ -142,17 +143,18 @@ The `merge` command makes use of a json configuration file which should be passe
         {
             "path": "/path/to/raster1.tif",
             "height_adjustment": -5.0,
-           "base_val": -10000,
-           "interval": 0.1,
-           "mask_values": [0]
+            "base_val": -10000,
+            "interval": 0.1,
+            "mask_values": [0]
         },
         {
             "path": "/path/to/raster2.tif",
             "height_adjustment": 10.0,
-             "mask_values": [-1,-32767]
+            "mask_values": [-1,-32767]
         }
     ],
     "output_path": "/path/to/output.mbtiles",
+    "output_nodata": -9999,
     "output_encoding": "terrarium",
     "output_format": "webp",
     "resampling": "bilinear",
@@ -184,6 +186,7 @@ The `merge` command makes use of a json configuration file which should be passe
         *   `mask_values` (Optional, Default `[0.0]`): A list of numbers representing the elevation values to mask.
 *   `output_path` (Optional, Default: `"output.mbtiles"`): The output path for the merged MBTiles file.
 *   `output_encoding` (Optional, Default: `"mapbox"`): The output encoding to use (`"mapbox"` or `"terrarium"`).
+*   `output_nodata` (Optional, Default: `None`): The value to use for output nodata replacement.  If set, `NaN` values will be replaced with this value. If `None`, no nodata replacement is performed.
 *   `output_format` (Optional, Default: `"png"`): The output image format (`"png"` or `"webp"`).
 *   `resampling` (Optional, Default: `"bilinear"`): The method to use for resampling (`"nearest"`, `"bilinear"`, `"cubic"`, `"cubic_spline"`, `"lanczos"`, `"average"`, `"mode"`, or `"gauss"`).
 *   `output_quantized_alpha` (Optional, Default: `false`): A boolean to determine if an alpha channel with quantized data should be added if the output is terrarium.

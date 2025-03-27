@@ -73,7 +73,7 @@ class TerrainRGBMerger:
     """
     A class to merge multiple Terrain RGB MBTiles files.
     """
-    def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX,
+    def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX, output_nodata=None,
                  resampling=Resampling.lanczos, processes=None, default_tile_size=512,
                  output_image_format=ImageFormat.PNG, output_quantized_alpha=False,
                  min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2,
@@ -81,6 +81,7 @@ class TerrainRGBMerger:
         self.sources = sources
         self.output_path = Path(output_path)
         self.output_encoding = output_encoding
+        self.output_nodata = output_nodata
         self.resampling = resampling
         self.processes = processes or multiprocessing.cpu_count()
         self.logger = logging.getLogger(__name__)
@@ -247,28 +248,27 @@ class TerrainRGBMerger:
 
     def _merge_tiles(self, tile_datas: List[Optional[TileData]], target_tile: mercantile.Tile) -> Optional[np.ndarray]:
         """Merge tiles from multiple sources, handling upscaling and priorities"""
-        #print(f"_merge_tiles called with tile_datas: , target_tile: ")
         if not any(tile_datas):
             return None
-        
+
         bounds = mercantile.bounds(target_tile)
-        
+
         # Use the tile size of the first tile, or the default if no primary tile
         tile_size = self.default_tile_size
         if tile_datas[0] is not None and 'width' in tile_datas[0].meta and 'height' in tile_datas[0].meta:
             tile_size = tile_datas[0].meta['width']
-            
+
         target_transform = rasterio.transform.from_bounds(
             bounds.west, bounds.south, bounds.east, bounds.north,
             tile_size, tile_size
         )
-        
+
         result = None
 
         for i, tile_data in enumerate(tile_datas):
             if tile_data is not None:
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
-                
+
                 #Apply the height adjustment
                 resampled_data += self.sources[i].height_adjustment
                 if result is None:
@@ -277,7 +277,11 @@ class TerrainRGBMerger:
                     mask = ~np.isnan(resampled_data)
                     if np.any(mask):
                         result[mask] = resampled_data[mask]
-                        
+
+        # Replace NaN values (original nodata) with the output_nodata value.
+        if result is not None and self.output_nodata is not None:
+            result[np.isnan(result)] = self.output_nodata
+
         return result
 
     def _resample_if_needed(self, tile_data: TileData, target_tile: mercantile.Tile, target_transform, tile_size) -> np.ndarray:

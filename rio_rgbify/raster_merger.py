@@ -70,7 +70,7 @@ class RasterRGBMerger:
     """
     A class to merge multiple Terrain RGB Raster files.
     """
-    def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX,
+    def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX, output_nodata=None,
                  resampling=Resampling.lanczos, processes=None, default_tile_size=512,
                  output_image_format=ImageFormat.PNG, output_quantized_alpha=False,
                  min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2, base_val=-10000, interval=0.1,
@@ -78,6 +78,7 @@ class RasterRGBMerger:
         self.sources = sources
         self.output_path = Path(output_path)
         self.output_encoding = output_encoding
+        self.output_nodata = output_nodata
         self.resampling = resampling
         self.processes = processes or multiprocessing.cpu_count()
         self.logger = logging.getLogger(__name__)
@@ -196,7 +197,11 @@ class RasterRGBMerger:
                     mask = ~np.isnan(resampled_data)
                     if np.any(mask):
                         result[mask] = resampled_data[mask]
-        
+
+        # Replace NaN values (original nodata) with the output_nodata value.
+        if result is not None and self.output_nodata is not None:
+            result[np.isnan(result)] = self.output_nodata
+
         return result
 
     def _resample_if_needed(self, tile_data: TileData, target_tile: mercantile.Tile, target_transform, tile_size) -> np.ndarray:

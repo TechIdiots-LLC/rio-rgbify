@@ -179,12 +179,11 @@ def merge(config, workers, verbose):
             raise Exception(f"Invalid output_type: ")
 
         for source in config['sources']:
-           
             source_type = source.get('source_type','mbtiles') # Default to mbtiles if source_type is not set
             if source_type.lower() != 'mbtiles' and source_type.lower() != 'raster':
                 logging.error("Invalid source_type, please use `mbtiles` or `raster`")
                 raise Exception(f"Invalid source_type: ")
-            
+
             if source_type.lower() == 'mbtiles':
                 sources.append(
                     MBTilesSource(
@@ -204,14 +203,15 @@ def merge(config, workers, verbose):
                         base_val=source.get("base_val", -10000),
                         interval=source.get("interval", 0.1),
                         mask_values=source.get("mask_values", [0.0])
-                        )
                     )
+                )
 
         if output_type.lower() == 'mbtiles':
             merger = TerrainRGBMerger(
                 sources,
                 output_path=config.get('output_path', 'output.mbtiles'),
                 output_encoding=EncodingType(config.get('output_encoding', "mapbox").lower()),
+                output_nodata=config.get("output_nodata", None),
                 output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
                 resampling=Resampling[config.get('resampling', 'lanczos').lower()],
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
@@ -227,6 +227,7 @@ def merge(config, workers, verbose):
                 sources,
                 output_path=config.get('output_path', 'output.mbtiles'),
                 output_encoding=EncodingType(config.get('output_encoding', "mapbox").lower()),
+                output_nodata=config.get("output_nodata", None),
                 output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
                 resampling=Resampling[config.get('resampling', 'lanczos').lower()],
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
@@ -237,7 +238,6 @@ def merge(config, workers, verbose):
                 processes=workers,
                 bounds_source = config.get("bounds_source", None)
             )
-
 
         merger.process_all(min_zoom=config.get("min_zoom", 0), verbose = verbose)
     except Exception as e:
