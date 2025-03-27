@@ -425,7 +425,7 @@ class TerrainRGBMerger:
             w,s,e,n = self.bounds
             print(f" West:{w} North: {n} East: {e} South: {s}")
             for x, y in _tile_range(mercantile.tile(w, n, zoom), mercantile.tile(e, s, zoom)):
-                y = int(math.pow(2, z)) - y - 1
+                y = int(math.pow(2, zoom)) - y - 1
                 tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
         else:
             # Get tiles from the specified source, or the last one if it does not exist
