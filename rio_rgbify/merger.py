@@ -170,8 +170,7 @@ class TerrainRGBMerger:
                     return None, {}
 
                 elevation = ImageEncoder._decode(rgb, source.base_val, source.interval, encoding.value) # Use the static decode method from the encoder
-                if source_index > 0:
-                    elevation = ImageEncoder._mask_elevation(elevation, source.mask_values)
+                elevation = ImageEncoder._mask_elevation(elevation, source.mask_values)
 
                 #Apply height adjustment
                 elevation += source.height_adjustment
@@ -274,11 +273,14 @@ class TerrainRGBMerger:
                 if result is None:
                     result = resampled_data
                 else:
+                    print(f"resampled_data {resampled_data}")
                     mask = ~np.isnan(resampled_data)
+                    print(f"result1 {result[mask]}")
                     if np.any(mask):
                         result[mask] = resampled_data[mask]
 
         # Replace NaN values (original nodata) with the output_nodata value.
+        print(f"self.output_nodata {self.output_nodata}")
         if result is not None and self.output_nodata is not None:
             print(f"result1 {result}")
             result[np.isnan(result)] = self.output_nodata
