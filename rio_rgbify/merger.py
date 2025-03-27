@@ -3,6 +3,7 @@ import rasterio
 import mercantile
 from rasterio.warp import reproject, Resampling
 import numpy as np
+import math
 import io
 from PIL import Image
 from multiprocessing import Pool, Process, Queue
