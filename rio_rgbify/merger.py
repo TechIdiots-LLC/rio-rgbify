@@ -516,7 +516,7 @@ def process_tile_task(task_tuple: tuple) -> None:
             source_conns[source.path] = sqlite3.connect(source.path)
 
         # create instance
-        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), resampling=resampling, output_image_format=ImageFormat(output_format), output_quantized_alpha=output_alpha)
+        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, output_image_format=ImageFormat(output_format), output_quantized_alpha=output_alpha)
 
         # Open database connection for the entire task
         with MBTilesDatabase(output_path) as db:
