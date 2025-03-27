@@ -280,7 +280,9 @@ class TerrainRGBMerger:
 
         # Replace NaN values (original nodata) with the output_nodata value.
         if result is not None and self.output_nodata is not None:
+            print(f"result1 {result}")
             result[np.isnan(result)] = self.output_nodata
+            print(f"result2 {result}")
 
         return result
 
