@@ -10,16 +10,10 @@ from rasterio.enums import Resampling
 from typing import List
 import rasterio as rio
 import numpy as np
-#from riomucho import RioMucho # Removed riomucho import
+from rasterio.warp import transform  # Import transform
 
-
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-# def _rgb_worker(data, window, ij, g_args): # Removed _rgb_worker function
-#     return data_to_rgb(
-#         data[0][g_args["bidx"] - 1], g_args["encoding"], g_args["base_val"], g_args["interval"], g_args["round_digits"]
-#     )
 
 
 @click.group(
@@ -119,11 +113,11 @@ def rgbify(
     """rio-rgbify cli."""
 
     if min_z is None or max_z is None:
-            raise ValueError("Zoom range must be provided for mbtile output")
+        raise ValueError("Zoom range must be provided for mbtile output")
 
     if max_z < min_z:
         raise ValueError(
-            "Max zoom {0} must be greater than min zoom ".format(max_z, min_z)
+            "Max zoom  must be greater than min zoom ".format(max_z, min_z)
         )
 
     if bounding_tile is not None:
@@ -131,11 +125,10 @@ def rgbify(
             bounding_tile = json.loads(bounding_tile)
         except Exception:
             raise TypeError(
-                "Bounding tile of {0} is not valid".format(bounding_tile)
+                "Bounding tile of  is not valid".format(bounding_tile)
             )
-    
+
     resampling_enum = Resampling[resampling.lower()]
-    
 
     with RGBTiler(
         src_path,
@@ -148,11 +141,9 @@ def rgbify(
         bounding_tile=bounding_tile,
         max_z=max_z,
         min_z=min_z,
-         resampling=resampling_enum,
+        resampling=resampling_enum,
     ) as tiler:
         tiler.run(workers, batch_size = batch_size, verbose = verbose)
-
-
 
 
 @main_group.command('merge', short_help='Merge multiple MBTiles or Raster files.')
@@ -206,6 +197,15 @@ def merge(config, workers, verbose):
                     )
                 )
 
+        bounds = config.get("bounds", None)
+        if bounds:
+            # Transform bounds to Web Mercator
+            west, south, east, north = bounds
+            xs, ys = transform('EPSG:4326', 'EPSG:3857', [west, east], [south, north])  # Correct usage
+            transformed_bounds = [xs[0], ys[0], xs[1], ys[1]]
+        else:
+            transformed_bounds = None
+
         if output_type.lower() == 'mbtiles':
             merger = TerrainRGBMerger(
                 sources,
@@ -217,7 +217,7 @@ def merge(config, workers, verbose):
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
-                bounds=config.get("bounds", None),
+                bounds=transformed_bounds,  # Use transformed bounds!
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
                 processes=workers,
                 bounds_source = config.get("bounds_source", None)
@@ -233,7 +233,7 @@ def merge(config, workers, verbose):
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
-                bounds=config.get("bounds", None),
+                bounds=transformed_bounds,  # Use transformed bounds!
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
                 processes=workers,
                 bounds_source = config.get("bounds_source", None)
