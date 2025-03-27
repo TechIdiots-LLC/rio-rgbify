@@ -273,18 +273,13 @@ class TerrainRGBMerger:
                 if result is None:
                     result = resampled_data
                 else:
-                    print(f"resampled_data {resampled_data}")
                     mask = ~np.isnan(resampled_data)
-                    print(f"result1 {result[mask]}")
                     if np.any(mask):
                         result[mask] = resampled_data[mask]
 
         # Replace NaN values (original nodata) with the output_nodata value.
-        print(f"self.output_nodata {self.output_nodata}")
         if result is not None and self.output_nodata is not None:
-            print(f"result1 {result}")
             result[np.isnan(result)] = self.output_nodata
-            print(f"result2 {result}")
 
         return result
 
