@@ -202,16 +202,6 @@ def merge(config, workers, verbose):
                     )
                 )
 
-        bounds = config.get("bounds", None)
-        #transformed_bounds = None # Delete this
-        # if bounds: # Delete the if conditional here
-        #     # Transform bounds to Web Mercator
-        #     west, south, east, north = bounds
-        #     xs, ys = transform('EPSG:4326', 'EPSG:3857', [west, east], [south, north])  # Correct usage
-        #     transformed_bounds = [xs[0], ys[0], xs[1], ys[1]]
-        # else:
-        #     transformed_bounds = None
-
         if output_type.lower() == 'mbtiles':
             merger = TerrainRGBMerger(
                 sources,
@@ -220,13 +210,14 @@ def merge(config, workers, verbose):
                 output_nodata=config.get("output_nodata", None),
                 output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
                 resampling=Resampling[config.get('resampling', 'lanczos').lower()],
+                sparse_tiles=config.get("sparse_tiles", False),
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
-                bounds=bounds,
+                bounds=config.get("bounds", None),
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
                 processes=workers,
-                bounds_source = config.get("bounds_source", None)
+                bounds_source = config.get("bounds_source", None),
             )
         elif output_type.lower() == 'raster':
             merger = RasterRGBMerger(
@@ -236,10 +227,11 @@ def merge(config, workers, verbose):
                 output_nodata=config.get("output_nodata", None),
                 output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
                 resampling=Resampling[config.get('resampling', 'lanczos').lower()],
+                sparse_tiles=config.get("sparse_tiles", False),
                 output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
-                bounds=bounds,  # Revert to using the *original* bounds
+                bounds=config.get("bounds", None),
                 gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
                 processes=workers,
                 bounds_source = config.get("bounds_source", None)
