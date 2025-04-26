@@ -249,6 +249,16 @@ class TerrainRGBMerger:
         if not any(tile_datas):
             return None
 
+        # Early exit if sparse tiles are enabled and all sources are upscaled
+        if self.sparse_tiles:
+            all_upscaled = True
+            for tile_data in tile_datas:
+                if tile_data is not None and tile_data.source_zoom == target_tile.z:
+                    all_upscaled = False
+                    break  # Found a non-upscaled source, no need to check further
+            if all_upscaled:
+                return None  # Skip processing this tile
+
         bounds = mercantile.bounds(target_tile)
 
         # Use the tile size of the first tile, or the default if no primary tile
@@ -262,18 +272,13 @@ class TerrainRGBMerger:
         )
 
         result = None
-        all_upscaled = True  # Assume all sources are upscaled initially
 
         for i, tile_data in enumerate(tile_datas):
             if tile_data is not None:
-                is_upscaled = tile_data.source_zoom != target_tile.z
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
 
-                #Apply the height adjustment
+                # Apply the height adjustment
                 resampled_data += self.sources[i].height_adjustment
-
-                if not is_upscaled:
-                    all_upscaled = False  # Found at least one non-upscaled source
 
                 if result is None:
                     result = resampled_data
@@ -285,10 +290,6 @@ class TerrainRGBMerger:
         # Replace NaN values (original nodata) with the output_nodata value.
         if result is not None and self.output_nodata is not None:
             result[np.isnan(result)] = self.output_nodata
-
-        # Check if sparse tiles are enabled and all data was upscaled
-        if self.sparse_tiles and all_upscaled:
-            return None  # Skip writing this tile
 
         return result
 
@@ -520,7 +521,7 @@ def process_tile_task(task_tuple: tuple) -> None:
             source_conns[source.path] = sqlite3.connect(source.path)
 
         # create instance
-        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, sparse_tiles = sparse_tiles, output_image_format=ImageFormat(output_format)) #Add sparse_tiles to the merger constructor
+        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, sparse_tiles = sparse_tiles, output_image_format=ImageFormat(output_format))
 
         # Open database connection for the entire task
         with MBTilesDatabase(output_path) as db:
