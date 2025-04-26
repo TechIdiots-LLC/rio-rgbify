@@ -308,7 +308,7 @@ def test_bad_input_format():
         )
         assert result.exit_code == 1
         assert result.exception
-        
+
 def test_merge_command():
     runner = CliRunner()
     with runner.isolated_filesystem():
