@@ -39,7 +39,7 @@ class ImageEncoder:
             a uint8 (3 x rows x cols) or (4 x rows x cols) ndarray with the
             data encoded
         """
-        logging.debug(f"data_to_rgb called with shape: {data.shape}, encoding: {encoding}, interval: {interval}, base_val: {base_val}, round_digits: {round_digits})
+        logging.debug(f"data_to_rgb called with shape: {data.shape}, encoding: {encoding}, interval: {interval}, base_val: {base_val}, round_digits: {round_digits}")
         if not isinstance(data, np.ndarray):
             raise ValueError("Input data must be a numpy array")
 
