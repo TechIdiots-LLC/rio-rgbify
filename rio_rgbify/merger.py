@@ -266,7 +266,7 @@ class TerrainRGBMerger:
 
         for i, tile_data in enumerate(tile_datas):
             if tile_data is not None:
-                is_upscaled = tile_data.meta['zoom'] != target_tile.z
+                is_upscaled = tile_data.source_zoom != target_tile.z
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
 
                 #Apply the height adjustment
