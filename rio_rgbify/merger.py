@@ -181,6 +181,7 @@ class TerrainRGBMerger:
                     'dtype': rasterio.float32,
                     'driver': 'GTiff',
                     'crs': 'EPSG:3857',
+                    'zoom': tile.z,
                     'transform': rasterio.transform.from_bounds(
                         bounds.west, bounds.south, bounds.east, bounds.north,
                         meta['width'], meta['height']
@@ -266,7 +267,7 @@ class TerrainRGBMerger:
 
         for i, tile_data in enumerate(tile_datas):
             if tile_data is not None:
-                is_upscaled = tile_data.source_zoom != target_tile.z
+                is_upscaled = tile_data.meta['zoom'] != target_tile.z
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
 
                 #Apply the height adjustment
@@ -407,6 +408,7 @@ class TerrainRGBMerger:
                 self.resampling,
                 self.sparse_tiles,
                 self.output_image_format.value,
+                tile.z,
                 verbose
             )
             for tile in tiles
@@ -493,7 +495,7 @@ class TerrainRGBMerger:
 @retry(attempts=5, base_delay=0.5, max_delay=5)
 def process_tile_task(task_tuple: tuple) -> None:
     """Standalone function for processing tiles that can be pickled"""
-    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, verbose= task_tuple  # Add sparse_tiles to the tuple
+    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, zoom , verbose= task_tuple  # Add sparse_tiles to the tuple
     # Configure logging for each process
     logging.basicConfig(
         level=logging.DEBUG,
@@ -527,7 +529,7 @@ def process_tile_task(task_tuple: tuple) -> None:
             # Extract tiles from all sources
             tile_datas = []
             for i, source in enumerate(sources):
-                tile_data = merger_instance._extract_tile(source, tile.x, tile.y, source_conns, i)
+                tile_data = merger_instance._extract_tile(source, zoom, tile.x, tile.y, source_conns, i)
                 tile_datas.append(tile_data)
 
             if not any(tile_datas):
