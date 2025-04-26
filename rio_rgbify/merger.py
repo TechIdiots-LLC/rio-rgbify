@@ -76,7 +76,7 @@ class TerrainRGBMerger:
     """
     def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX, output_nodata=None,
                  resampling=Resampling.lanczos, sparse_tiles=False, processes=None, default_tile_size=512,
-                 output_image_format=ImageFormat.PNG, output_quantized_alpha=False,
+                 output_image_format=ImageFormat.PNG,
                  min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2,
                  bounds_source=None):
         self.sources = sources
@@ -89,7 +89,6 @@ class TerrainRGBMerger:
         self.logger = logging.getLogger(__name__)
         self.default_tile_size = default_tile_size
         self.output_image_format = output_image_format
-        self.output_quantized_alpha = output_quantized_alpha
         self.min_zoom = min_zoom
         self.max_zoom = max_zoom
         self.bounds = bounds
@@ -116,8 +115,6 @@ class TerrainRGBMerger:
             The default tile size in pixels. Defaults to 512.
         output_image_format : ImageFormat, optional
             The output image format of the tiles. Defaults to ImageFormat.PNG
-        output_quantized_alpha : bool, optional
-            If set to true and using terrarium output encoding, the alpha channel will be populated with quantized data
         min_zoom : int, optional
             The minimum zoom level to process tiles, defaults to 0.
         max_zoom : Optional[int], optional
@@ -376,8 +373,7 @@ class TerrainRGBMerger:
                 merged_elevation,
                 self.output_encoding,
                 0.1,
-                base_val=-10000,
-                quantized_alpha=self.output_quantized_alpha if self.output_encoding == EncodingType.TERRARIUM else False
+                base_val=-10000
             )
             image_bytes = ImageEncoder.save_rgb_to_bytes(rgb_data, self.output_image_format, self.default_tile_size)
             
@@ -411,7 +407,6 @@ class TerrainRGBMerger:
                 self.resampling,
                 self.sparse_tiles,
                 self.output_image_format.value,
-                self.output_quantized_alpha,
                 verbose
             )
             for tile in tiles
@@ -498,7 +493,7 @@ class TerrainRGBMerger:
 @retry(attempts=5, base_delay=0.5, max_delay=5)
 def process_tile_task(task_tuple: tuple) -> None:
     """Standalone function for processing tiles that can be pickled"""
-    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, output_alpha, verbose = task_tuple  # Add sparse_tiles to the tuple
+    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, verbose = task_tuple  # Add sparse_tiles to the tuple
     # Configure logging for each process
     logging.basicConfig(
         level=logging.DEBUG,
@@ -525,7 +520,7 @@ def process_tile_task(task_tuple: tuple) -> None:
             source_conns[source.path] = sqlite3.connect(source.path)
 
         # create instance
-        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, sparse_tiles = sparse_tiles, output_image_format=ImageFormat(output_format), output_quantized_alpha=output_alpha) #Add sparse_tiles to the merger constructor
+        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, sparse_tiles = sparse_tiles, output_image_format=ImageFormat(output_format)) #Add sparse_tiles to the merger constructor
 
         # Open database connection for the entire task
         with MBTilesDatabase(output_path) as db:
@@ -553,8 +548,7 @@ def process_tile_task(task_tuple: tuple) -> None:
                 merged_elevation,
                 output_encoding,
                 0.1,
-                base_val=-10000,
-                quantized_alpha=output_alpha
+                base_val=-10000
             )
             image_bytes = ImageEncoder.save_rgb_to_bytes(rgb_data, output_format)
             if verbose:

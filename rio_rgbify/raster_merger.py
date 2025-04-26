@@ -72,7 +72,7 @@ class RasterRGBMerger:
     """
     def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX, output_nodata=None,
                  resampling=Resampling.lanczos, processes=None, default_tile_size=512,
-                 output_image_format=ImageFormat.PNG, output_quantized_alpha=False,
+                 output_image_format=ImageFormat.PNG,
                  min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2, base_val=-10000, interval=0.1,
                  bounds_source=None):
         self.sources = sources
@@ -84,7 +84,6 @@ class RasterRGBMerger:
         self.logger = logging.getLogger(__name__)
         self.default_tile_size = default_tile_size
         self.output_image_format = output_image_format
-        self.output_quantized_alpha = output_quantized_alpha
         self.min_zoom = min_zoom
         self.max_zoom = max_zoom
         self.bounds = bounds
@@ -112,8 +111,6 @@ class RasterRGBMerger:
             The default tile size in pixels. Defaults to 512.
         output_image_format : ImageFormat, optional
             The output image format of the tiles. Defaults to ImageFormat.PNG
-        output_quantized_alpha : bool, optional
-            If set to true and using terrarium output encoding, the alpha channel will be populated with quantized data
         min_zoom : int, optional
             The minimum zoom level to process tiles, defaults to 0.
         max_zoom : Optional[int], optional
@@ -284,8 +281,7 @@ class RasterRGBMerger:
                 merged_elevation,
                 self.output_encoding,
                 self.interval,
-                base_val=self.base_val,
-                quantized_alpha=self.output_quantized_alpha if self.output_encoding == EncodingType.TERRARIUM else False
+                base_val=self.base_val
             )
             image_bytes = ImageEncoder.save_rgb_to_bytes(rgb_data, self.output_image_format, self.default_tile_size)
             
@@ -377,7 +373,6 @@ class RasterRGBMerger:
                 self.output_encoding.value,
                 self.resampling,
                 self.output_image_format.value,
-                self.output_quantized_alpha,
                 self.base_val,
                 self.interval,
                 verbose
@@ -397,7 +392,7 @@ class RasterRGBMerger:
 @retry(attempts=5, base_delay=0.5, max_delay=5)
 def process_tile_task(task_tuple: tuple) -> None:
     """Standalone function for processing tiles that can be pickled"""
-    tile, source_configs, output_path, output_encoding, resampling, output_format, output_alpha, base_val, interval, verbose = task_tuple
+    tile, source_configs, output_path, output_encoding, resampling, output_format, base_val, interval, verbose = task_tuple
 
     # Configure logging for each process
     logger = logging.getLogger(__name__)
@@ -415,7 +410,7 @@ def process_tile_task(task_tuple: tuple) -> None:
             sources.append(source)
 
         # create instance
-        merger_instance = RasterRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), resampling=resampling, output_image_format=ImageFormat(output_format), output_quantized_alpha=output_alpha, base_val=base_val, interval=interval)
+        merger_instance = RasterRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), resampling=resampling, output_image_format=ImageFormat(output_format), base_val=base_val, interval=interval)
 
         # Open database connection for the entire task
         with MBTilesDatabase(output_path) as db:
@@ -441,8 +436,7 @@ def process_tile_task(task_tuple: tuple) -> None:
                 merged_elevation,
                 output_encoding,
                 interval,
-                base_val=base_val,
-                quantized_alpha=output_alpha
+                base_val=base_val
             )
             image_bytes = ImageEncoder.save_rgb_to_bytes(rgb_data, output_format)
             logger.debug(f"image_bytes {len(image_bytes)}")
