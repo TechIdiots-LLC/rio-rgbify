@@ -249,13 +249,19 @@ class TerrainRGBMerger:
         if not any(tile_datas):
             return None
 
-        # Early exit if sparse tiles are enabled and all sources are upscaled
+        # Early exit if sparse tiles are enabled and all sources are upscaled or NaN
         if self.sparse_tiles:
             all_upscaled = True
             for tile_data in tile_datas:
-                if tile_data is not None and tile_data.source_zoom == target_tile.z:
-                    all_upscaled = False
-                    break  # Found a non-upscaled source, no need to check further
+                if tile_data is not None:
+                    if tile_data.source_zoom == target_tile.z:
+                        if not np.all(np.isnan(tile_data.data)):
+                            all_upscaled = False
+                            break  # Found a non-upscaled and non-NaN source
+                        else:
+                            logging.debug("Found an all NaN source tile at the target zoom, skipping")
+                    else:
+                        logging.debug("Source Tile was upscaled")
             if all_upscaled:
                 return None  # Skip processing this tile
 
@@ -290,6 +296,10 @@ class TerrainRGBMerger:
         # Replace NaN values (original nodata) with the output_nodata value.
         if result is not None and self.output_nodata is not None:
             result[np.isnan(result)] = self.output_nodata
+
+        # Check if sparse tiles are enabled and the whole tile is NaN after applying output_nodata
+        if self.sparse_tiles and result is not None and np.all(np.isnan(result)):
+            return None
 
         return result
 
