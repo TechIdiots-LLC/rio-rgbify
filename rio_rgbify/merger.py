@@ -249,21 +249,21 @@ class TerrainRGBMerger:
         if not any(tile_datas):
             return None
 
-        # Early exit if sparse tiles are enabled and all sources are upscaled or NaN
+        # Sparse tiles: skip this tile if no source has a native tile at the target zoom
+        # with actual (non-all-NaN) data.  A native tile where every pixel has been masked
+        # out is treated the same as having no data — the result would be identical to what
+        # the client produces by overzooming from the highest available lower-zoom tile, so
+        # there is no point storing it.  Only tiles where at least one source contributes
+        # real pixels (land, coast, or bathymetry at native resolution) are written.
         if self.sparse_tiles:
-            all_upscaled = True
-            for tile_data in tile_datas:
-                if tile_data is not None:
-                    if tile_data.source_zoom == target_tile.z:
-                        if not np.all(np.isnan(tile_data.data)):
-                            all_upscaled = False
-                            break  # Found a non-upscaled and non-NaN source
-                        else:
-                            logging.debug("Found an all NaN source tile at the target zoom, skipping")
-                    else:
-                        logging.debug("Source Tile was upscaled")
-            if all_upscaled:
-                return None  # Skip processing this tile
+            has_native_with_data = any(
+                td is not None
+                and td.source_zoom == target_tile.z
+                and not np.all(np.isnan(td.data))
+                for td in tile_datas
+            )
+            if not has_native_with_data:
+                return None  # Skip — client can overzoom from a lower-zoom tile
 
         bounds = mercantile.bounds(target_tile)
 
