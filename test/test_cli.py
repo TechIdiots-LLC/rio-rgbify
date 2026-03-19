@@ -322,8 +322,7 @@ def test_merge_command():
             "output_path": "merged.mbtiles",
             "output_format": "webp",
             "output_encoding": "mapbox",
-            "resampling": "bilinear",
-            "output_quantized_alpha": True
+            "resampling": "bilinear"
         }
         
         with open("config.json", "w") as f:
@@ -339,7 +338,6 @@ def test_merge_command():
                 "merge",
                 "--config",
                 "config.json",
-                "--output-quantized-alpha",
                 "-j",
                 "1"
             ]
@@ -535,49 +533,6 @@ def test_mbtiler_resampling_cli():
     assert result.exit_code == 0
 
 
-def test_mbtiler_quantized_alpha_cli():
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        out_mbtiles = "output.mbtiles"
-        result = runner.invoke(
-            rgbify,
-            [
-                in_elev_src,
-                out_mbtiles,
-                "--min-z",
-                10,
-                "--max-z",
-                11,
-                "--format",
-                "png",
-                "--encoding",
-                "terrarium",
-                 "--quantized-alpha",
-                "-j",
-                1,
-            ],
-        )
-        assert result.exit_code == 0
-        
-        result = runner.invoke(
-            rgbify,
-            [
-                in_elev_src,
-                out_mbtiles,
-                "--min-z",
-                10,
-                "--max-z",
-                11,
-                "--format",
-                "png",
-                "--encoding",
-                "terrarium",
-                 "-j",
-                 1,
-            ],
-        )
-        assert result.exit_code == 0
-        
 def test_mbtiler_baseval_cli():
   runner = CliRunner()
   with runner.isolated_filesystem():

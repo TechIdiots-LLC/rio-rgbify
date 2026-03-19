@@ -220,7 +220,6 @@ def merge(config, workers, verbose):
                 output_nodata=config.get("output_nodata", None),
                 output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
                 resampling=Resampling[config.get('resampling', 'lanczos').lower()],
-                output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
                 bounds=bounds,
@@ -236,7 +235,6 @@ def merge(config, workers, verbose):
                 output_nodata=config.get("output_nodata", None),
                 output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
                 resampling=Resampling[config.get('resampling', 'lanczos').lower()],
-                output_quantized_alpha=config.get('output_quantized_alpha', False),
                 min_zoom= config.get("min_zoom", 0),
                 max_zoom=config.get("max_zoom", None),
                 bounds=bounds,  # Revert to using the *original* bounds

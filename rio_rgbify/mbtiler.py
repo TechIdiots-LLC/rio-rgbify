@@ -20,7 +20,7 @@ import psutil
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def process_tile(inpath, format, encoding, interval, base_val, round_digits, resampling, quantized_alpha, tile, verbose):
+def process_tile(inpath, format, encoding, interval, base_val, round_digits, resampling, tile, verbose):
     """Standalone tile processing function"""
     # Log the process ID and CPU core
     proc = psutil.Process()
@@ -65,7 +65,7 @@ def process_tile(inpath, format, encoding, interval, base_val, round_digits, res
               print(f"process_tile: Reprojected tile {tile}, out shape: {out.shape}")
               print(f"process_tile: data before data_to_rgb: min={np.nanmin(out)}, max={np.nanmax(out)}, type: {out.dtype}")
 
-            rgb = ImageEncoder.data_to_rgb(out, encoding, interval, base_val, round_digits, quantized_alpha)
+            rgb = ImageEncoder.data_to_rgb(out, encoding, interval, base_val, round_digits)
             if verbose:
               print(f"process_tile: data after data_to_rgb: min={np.nanmin(rgb)}, max={np.nanmax(rgb)}, type: {rgb.dtype}")
             result = ImageEncoder.save_rgb_to_bytes(rgb, format)
@@ -139,7 +139,6 @@ class RGBTiler:
         encoding="mapbox",
         format="webp",
         resampling=Resampling.nearest,
-        quantized_alpha=True,
         bounding_tile=None,
     ):
         self.inpath = inpath
@@ -153,7 +152,6 @@ class RGBTiler:
         self.base_val = base_val
         self.round_digits = round_digits
         self.resampling = resampling
-        self.quantized_alpha = quantized_alpha
 
     @staticmethod
     def _tile_range(min_tile, max_tile):
@@ -270,7 +268,6 @@ class RGBTiler:
             self.base_val,
             self.round_digits,
             self.resampling,
-            self.quantized_alpha,
             verbose=verbose # Changed to keyword argument
         )
 

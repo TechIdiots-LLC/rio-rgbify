@@ -127,7 +127,6 @@ The `merge` command makes use of a json configuration file which should be passe
     "output_nodata": -9999,
     "output_format": "webp",
     "resampling": "bilinear",
-    "output_quantized_alpha": true,
     "min_zoom": 2,
     "max_zoom": 10,
     "gaussian_blur_sigma": 0.2,
@@ -158,7 +157,6 @@ The `merge` command makes use of a json configuration file which should be passe
     "output_encoding": "terrarium",
     "output_format": "webp",
     "resampling": "bilinear",
-    "output_quantized_alpha": true,
     "min_zoom": 2,
     "max_zoom": 10,
     "bounds": [-10,10,20,50],
@@ -189,7 +187,6 @@ The `merge` command makes use of a json configuration file which should be passe
 *   `output_nodata` (Optional, Default: `None`): The value to use for output nodata replacement.  If set, `NaN` values will be replaced with this value. If `None`, no nodata replacement is performed.
 *   `output_format` (Optional, Default: `"png"`): The output image format (`"png"` or `"webp"`).
 *   `resampling` (Optional, Default: `"bilinear"`): The method to use for resampling (`"nearest"`, `"bilinear"`, `"cubic"`, `"cubic_spline"`, `"lanczos"`, `"average"`, `"mode"`, or `"gauss"`).
-*   `output_quantized_alpha` (Optional, Default: `false`): A boolean to determine if an alpha channel with quantized data should be added if the output is terrarium.
 *   `min_zoom` (Optional, Default: `0`): The minimum zoom level to process.
 *   `max_zoom` (Optional, Default: uses max from last file): The maximum zoom level to process.
 *  `bounds` (Optional, Default: bounds of last file): A bounding box to limit the tiles being generated. Should be in the format: `[w,s,e,n]`. **Overrides `bounds_source` if set**.

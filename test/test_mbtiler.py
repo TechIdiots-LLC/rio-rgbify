@@ -153,19 +153,3 @@ def test_mbtiler_resampling():
     finally:
         if os.path.exists(test_out):
           os.remove(test_out)
-
-
-def test_mbtiler_quantized_alpha():
-    
-    test_in = os.path.join(os.path.dirname(__file__), "fixtures", "elev.tif")
-    test_out = 'test_quantized.mbtiles'
-    test_minz = 0
-    test_maxz = 1
-    try:
-        with RGBTiler(test_in, test_out, test_minz, test_maxz, encoding="terrarium", format="png", quantized_alpha=True) as rtiler:
-            rtiler.run(1)
-        with RGBTiler(test_in, test_out, test_minz, test_maxz, encoding="terrarium", format="png", quantized_alpha=False) as rtiler:
-            rtiler.run(1)
-    finally:
-        if os.path.exists(test_out):
-           os.remove(test_out)
