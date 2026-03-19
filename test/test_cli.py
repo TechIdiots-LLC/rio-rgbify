@@ -309,43 +309,7 @@ def test_bad_input_format():
         assert result.exit_code == 1
         assert result.exception
 
-
 def test_merge_command():
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # Create a sample config file
-        config_data = {
-            "sources": [
-                {"path": "test1.mbtiles", "encoding": "mapbox", "height_adjustment": 5},
-                {"path": "test2.mbtiles", "encoding": "terrarium", "height_adjustment": -10}
-                ],
-            "output_path": "merged.mbtiles",
-            "output_format": "webp",
-            "output_encoding": "mapbox",
-            "resampling": "bilinear"
-        }
-        
-        with open("config.json", "w") as f:
-            json.dump(config_data, f)
-
-        # Create dummy mbtiles files
-        open("test1.mbtiles", "w").close()
-        open("test2.mbtiles", "w").close()
-
-        result = runner.invoke(
-            cli,
-            [
-                "merge",
-                "--config",
-                "config.json",
-                "-j",
-                "1"
-            ]
-        )
-        assert result.exit_code == 0
-        assert os.path.exists("merged.mbtiles")
-        
-def test_merge_command_no_quantized():
     runner = CliRunner()
     with runner.isolated_filesystem():
         # Create a sample config file

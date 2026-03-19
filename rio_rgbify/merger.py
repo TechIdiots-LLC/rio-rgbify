@@ -75,7 +75,7 @@ class TerrainRGBMerger:
     A class to merge multiple Terrain RGB MBTiles files.
     """
     def __init__(self, sources, output_path, output_encoding=EncodingType.MAPBOX, output_nodata=None,
-                 resampling=Resampling.lanczos, processes=None, default_tile_size=512,
+                 resampling=Resampling.lanczos, sparse_tiles=False, processes=None, default_tile_size=512,
                  output_image_format=ImageFormat.PNG,
                  min_zoom=0, max_zoom=None, bounds=None, gaussian_blur_sigma=0.2,
                  bounds_source=None):
@@ -84,6 +84,7 @@ class TerrainRGBMerger:
         self.output_encoding = output_encoding
         self.output_nodata = output_nodata
         self.resampling = resampling
+        self.sparse_tiles = sparse_tiles
         self.processes = processes or multiprocessing.cpu_count()
         self.logger = logging.getLogger(__name__)
         self.default_tile_size = default_tile_size
@@ -248,6 +249,22 @@ class TerrainRGBMerger:
         if not any(tile_datas):
             return None
 
+        # Sparse tiles: skip this tile if no source has a native tile at the target zoom
+        # with actual (non-all-NaN) data.  A native tile where every pixel has been masked
+        # out is treated the same as having no data — the result would be identical to what
+        # the client produces by overzooming from the highest available lower-zoom tile, so
+        # there is no point storing it.  Only tiles where at least one source contributes
+        # real pixels (land, coast, or bathymetry at native resolution) are written.
+        if self.sparse_tiles:
+            has_native_with_data = any(
+                td is not None
+                and td.source_zoom == target_tile.z
+                and not np.all(np.isnan(td.data))
+                for td in tile_datas
+            )
+            if not has_native_with_data:
+                return None  # Skip — client can overzoom from a lower-zoom tile
+
         bounds = mercantile.bounds(target_tile)
 
         # Use the tile size of the first tile, or the default if no primary tile
@@ -266,8 +283,9 @@ class TerrainRGBMerger:
             if tile_data is not None:
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
 
-                #Apply the height adjustment
+                # Apply the height adjustment
                 resampled_data += self.sources[i].height_adjustment
+
                 if result is None:
                     result = resampled_data
                 else:
@@ -278,6 +296,10 @@ class TerrainRGBMerger:
         # Replace NaN values (original nodata) with the output_nodata value.
         if result is not None and self.output_nodata is not None:
             result[np.isnan(result)] = self.output_nodata
+
+        # Check if sparse tiles are enabled and the whole tile is NaN after applying output_nodata
+        if self.sparse_tiles and result is not None and np.all(np.isnan(result)):
+            return None
 
         return result
 
@@ -394,6 +416,7 @@ class TerrainRGBMerger:
                 self.output_encoding.value,
                 self.output_nodata,
                 self.resampling,
+                self.sparse_tiles,
                 self.output_image_format.value,
                 verbose
             )
@@ -481,8 +504,7 @@ class TerrainRGBMerger:
 @retry(attempts=5, base_delay=0.5, max_delay=5)
 def process_tile_task(task_tuple: tuple) -> None:
     """Standalone function for processing tiles that can be pickled"""
-    tile, source_configs, output_path, output_encoding, output_nodata, resampling, output_format, verbose = task_tuple
-    
+    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, verbose = task_tuple
     # Configure logging for each process
     logging.basicConfig(
         level=logging.DEBUG,
@@ -490,7 +512,7 @@ def process_tile_task(task_tuple: tuple) -> None:
     )
 
     print(f"process_tile_task started for tile {tile.z}/{tile.x}/{tile.y}")
-    
+
     source_conns = {}
     sources = []
     db = None
@@ -509,7 +531,9 @@ def process_tile_task(task_tuple: tuple) -> None:
             source_conns[source.path] = sqlite3.connect(source.path)
 
         # create instance
-        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, output_image_format=ImageFormat(output_format))
+        merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, sparse_tiles = sparse_tiles, output_image_format=ImageFormat(output_format))
+
+        # Open database connection for the entire task
         with MBTilesDatabase(output_path) as db:
             # Extract tiles from all sources
             tile_datas = []
@@ -524,12 +548,12 @@ def process_tile_task(task_tuple: tuple) -> None:
 
             # Merge the elevation data
             merged_elevation = merger_instance._merge_tiles(tile_datas, tile)
-            
+
             if merged_elevation is None:
                 if verbose:
                     print(f"No merged elevation {tile.z}/{tile.x}/{tile.y}")
                 return
-            
+
             # Encode using output format
             rgb_data = ImageEncoder.data_to_rgb(
                 merged_elevation,

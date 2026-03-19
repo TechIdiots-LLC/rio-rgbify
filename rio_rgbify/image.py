@@ -121,7 +121,7 @@ class ImageEncoder:
         """
         maxrange = 256 ** 3
         return datarange > maxrange
-    
+
     @staticmethod
     def save_rgb_to_bytes(rgb_data: np.ndarray, output_image_format: str | ImageFormat, default_tile_size: int = 512) -> bytes:
         print(f"save_rgb_to_bytes called with rgb data shape {rgb_data.shape}")
