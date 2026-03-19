@@ -504,7 +504,7 @@ class TerrainRGBMerger:
 @retry(attempts=5, base_delay=0.5, max_delay=5)
 def process_tile_task(task_tuple: tuple) -> None:
     """Standalone function for processing tiles that can be pickled"""
-    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, verbose = task_tuple  # Add sparse_tiles to the tuple
+    tile, source_configs, output_path, output_encoding, output_nodata, resampling, sparse_tiles, output_format, verbose = task_tuple
     # Configure logging for each process
     logging.basicConfig(
         level=logging.DEBUG,

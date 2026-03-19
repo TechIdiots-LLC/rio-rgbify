@@ -189,7 +189,7 @@ The `merge` command makes use of a json configuration file which should be passe
 *   `output_nodata` (Optional, Default: `None`): The value to use for output nodata replacement.  If set, `NaN` values will be replaced with this value. If `None`, no nodata replacement is performed.
 *   `output_format` (Optional, Default: `"png"`): The output image format (`"png"` or `"webp"`).
 *   `resampling` (Optional, Default: `"bilinear"`): The method to use for resampling (`"nearest"`, `"bilinear"`, `"cubic"`, `"cubic_spline"`, `"lanczos"`, `"average"`, `"mode"`, or `"gauss"`).
-*   sparse_tiles (Optional, Default: false): A boolean that determines whether to skip writing tiles that only contain upscaled data. If true, tiles consisting entirely of upscaled data will not be written to the output MBTiles file.
+*   `sparse_tiles` (Optional, Default: false): A boolean that determines whether to skip writing tiles that only contain upscaled data. If true, tiles consisting entirely of upscaled data will not be written to the output MBTiles file.
 *   `min_zoom` (Optional, Default: `0`): The minimum zoom level to process.
 *   `max_zoom` (Optional, Default: uses max from last file): The maximum zoom level to process.
 *  `bounds` (Optional, Default: bounds of last file): A bounding box to limit the tiles being generated. Should be in the format: `[w,s,e,n]`. **Overrides `bounds_source` if set**.

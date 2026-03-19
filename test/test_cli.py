@@ -495,7 +495,8 @@ def test_mbtiler_resampling_cli():
         ],
     )
     assert result.exit_code == 0
-        
+
+
 def test_mbtiler_baseval_cli():
   runner = CliRunner()
   with runner.isolated_filesystem():
