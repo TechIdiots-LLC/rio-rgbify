@@ -6,7 +6,7 @@ from click.testing import CliRunner
 import numpy as np
 
 import rasterio as rio
-from rio_rgbify.scripts.cli import cli, rgbify, merge
+from rio_rgbify.scripts.cli import main_group as cli, rgbify, merge
 
 from raster_tester.compare import affaux, upsample_array
 

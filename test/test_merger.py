@@ -38,7 +38,7 @@ from rio_rgbify.raster_merger import (
     RasterRGBMerger,
     RasterSource,
 )
-from rio_rgbify.scripts.cli import cli
+from rio_rgbify.scripts.cli import main_group as cli
 
 
 # ---------------------------------------------------------------------------
