@@ -82,6 +82,10 @@ def _make_mbtiles(path: str, tiles: dict, encoding: str = "mapbox") -> None:
             db.insert_tile_with_retry([x, y, z], tile_bytes)
 
 
+# Web Mercator cannot project lat=±90; clamp to the valid range.
+_WORLD_BOUNDS = (-180.0, -85.05, 180.0, 85.05)
+
+
 def _make_geotiff(path: str, bounds, fill: float = 100.0, epsg: int = 4326) -> None:
     """
     Write a single-band GeoTIFF at *path* covering *bounds* (west, south, east, north).
@@ -126,15 +130,16 @@ class TestTerrainRGBMergerMergeTiles:
         }
         return TileData(data=data, meta=meta, source_zoom=zoom)
 
-    def _merger(self, sparse_tiles=False):
-        # Sources list is not used by _merge_tiles directly, but the
-        # constructor needs something non-empty for height_adjustment lookup.
+    def _merger(self, sparse_tiles=False, num_sources=2):
+        # Sources list must have enough entries to match the tile_datas passed
+        # to _merge_tiles (it accesses self.sources[i] for height_adjustment).
         sources = [
             MBTilesSource(
                 path=Path(__file__),  # just needs to exist
                 encoding=EncodingType.MAPBOX,
                 height_adjustment=0.0,
             )
+            for _ in range(num_sources)
         ]
         return TerrainRGBMerger(
             sources=sources,
@@ -156,7 +161,7 @@ class TestTerrainRGBMergerMergeTiles:
         assert np.allclose(result, 500.0, atol=1.0)
 
     def test_second_source_fills_nan_from_first(self):
-        merger = self._merger()
+        merger = self._merger(num_sources=2)
         # First source: all NaN (masked ocean)
         td1 = self._make_tile_data(0.0)
         td1.data[:] = np.nan
@@ -167,7 +172,7 @@ class TestTerrainRGBMergerMergeTiles:
         assert np.allclose(result, 200.0, atol=1.0)
 
     def test_first_source_takes_priority_over_second(self):
-        merger = self._merger()
+        merger = self._merger(num_sources=2)
         td1 = self._make_tile_data(300.0)
         td2 = self._make_tile_data(100.0)
         result = merger._merge_tiles([td1, td2], SAMPLE_TILE)
@@ -488,7 +493,7 @@ class TestRasterRGBMergerIntegration:
     def test_produces_mbtiles_output(self, tmp_path):
         tif = str(tmp_path / "dem.tif")
         out = str(tmp_path / "out.mbtiles")
-        _make_geotiff(tif, bounds=(-180, -90, 180, 90), fill=100.0, epsg=4326)
+        _make_geotiff(tif, bounds=_WORLD_BOUNDS, fill=100.0, epsg=4326)
 
         merger = RasterRGBMerger(
             sources=[RasterSource(Path(tif))],
@@ -512,7 +517,7 @@ class TestRasterRGBMergerIntegration:
         tif = str(tmp_path / "dem.tif")
         out = str(tmp_path / "out.mbtiles")
         # All zeros — will be masked since mask_values=[0.0]
-        _make_geotiff(tif, bounds=(-180, -90, 180, 90), fill=0.0, epsg=4326)
+        _make_geotiff(tif, bounds=_WORLD_BOUNDS, fill=0.0, epsg=4326)
 
         merger = RasterRGBMerger(
             sources=[RasterSource(Path(tif), mask_values=[0.0])],

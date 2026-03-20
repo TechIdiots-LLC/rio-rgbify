@@ -283,9 +283,7 @@ class TerrainRGBMerger:
             if tile_data is not None:
                 resampled_data = self._resample_if_needed(tile_data, target_tile, target_transform, tile_size)
 
-                # Apply the height adjustment
-                resampled_data += self.sources[i].height_adjustment
-
+                # height_adjustment is already applied in _decode_tile during extraction
                 if result is None:
                     result = resampled_data
                 else:

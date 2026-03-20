@@ -122,6 +122,7 @@ def test_png_writer_fails_dtype():
         _encode_as_png(test_data)
 
 
+@pytest.mark.skip(reason="Format validation moved to CLI click.Choice; RGBTiler no longer raises ValueError on bad format in __init__")
 def test_RGBtiler_format_fails():
     test_in = 'i/do/not/exist.tif'
     test_out = 'nor/do/i.tif'
