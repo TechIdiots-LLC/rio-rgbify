@@ -1,9 +1,10 @@
 import click
 import logging
+import os
 from pathlib import Path
 import json
 from rio_rgbify.mbtiler import RGBTiler
-from rio_rgbify.merger import TerrainRGBMerger, MBTilesSource, EncodingType
+from rio_rgbify.merger import TerrainRGBMerger, MBTilesSource, PMTilesSource, EncodingType
 from rio_rgbify.raster_merger import RasterRGBMerger, RasterSource
 from rio_rgbify.image import ImageFormat
 from rasterio.enums import Resampling
@@ -96,6 +97,12 @@ def main_group():
     "--resampling", type=click.Choice(["nearest", "bilinear", "cubic", "cubic_spline", "lanczos", "average", "mode", "gauss"], case_sensitive=False), default="nearest",
     help="Resampling method"
 )
+@click.option(
+    "--output-format",
+    type=click.Choice(["mbtiles", "pmtiles"], case_sensitive=False),
+    default=None,
+    help="Output archive format. Defaults to mbtiles or pmtiles based on the dst_path extension.",
+)
 # @click.pass_context
 # @creation_options
 def rgbify(
@@ -113,7 +120,8 @@ def rgbify(
     workers,
     verbose,
     batch_size,
-    resampling
+    resampling,
+    output_format,
 ):
     """rio-rgbify cli."""
 
@@ -135,6 +143,14 @@ def rgbify(
 
     resampling_enum = Resampling[resampling.lower()]
 
+    # Determine output format from extension if not explicitly specified
+    if output_format is None:
+        ext = os.path.splitext(dst_path)[1].lower()
+        if ext == ".pmtiles":
+            output_format = "pmtiles"
+        else:
+            output_format = "mbtiles"
+
     with RGBTiler(
         src_path,
         dst_path,
@@ -147,6 +163,7 @@ def rgbify(
         max_z=max_z,
         min_z=min_z,
         resampling=resampling_enum,
+        output_format=output_format,
     ) as tiler:
         tiler.run(workers, batch_size = batch_size, verbose = verbose)
 
@@ -170,19 +187,30 @@ def merge(config, workers, verbose):
         sources = []
         output_type = config.get('output_type', 'mbtiles')
 
-        if output_type.lower() != 'mbtiles' and output_type.lower() != 'raster':
-            logging.error("Invalid output_type, please use `mbtiles` or `raster`")
+        if output_type.lower() not in ('mbtiles', 'raster', 'pmtiles'):
+            logging.error("Invalid output_type, please use `mbtiles`, `pmtiles`, or `raster`")
             raise Exception(f"Invalid output_type: ")
 
         for source in config['sources']:
             source_type = source.get('source_type','mbtiles') # Default to mbtiles if source_type is not set
-            if source_type.lower() != 'mbtiles' and source_type.lower() != 'raster':
-                logging.error("Invalid source_type, please use `mbtiles` or `raster`")
+            if source_type.lower() not in ('mbtiles', 'raster', 'pmtiles'):
+                logging.error("Invalid source_type, please use `mbtiles`, `pmtiles`, or `raster`")
                 raise Exception(f"Invalid source_type: ")
 
             if source_type.lower() == 'mbtiles':
                 sources.append(
                     MBTilesSource(
+                        path=Path(source["path"]),
+                        encoding=EncodingType(source.get("encoding", "mapbox").lower()),
+                        height_adjustment=source.get("height_adjustment", 0.0),
+                        base_val=source.get("base_val", -10000),
+                        interval=source.get("interval", 0.1),
+                        mask_values=source.get("mask_values", [0.0])
+                    )
+                )
+            elif source_type.lower() == 'pmtiles':
+                sources.append(
+                    PMTilesSource(
                         path=Path(source["path"]),
                         encoding=EncodingType(source.get("encoding", "mapbox").lower()),
                         height_adjustment=source.get("height_adjustment", 0.0),
@@ -202,7 +230,7 @@ def merge(config, workers, verbose):
                     )
                 )
 
-        if output_type.lower() == 'mbtiles':
+        if output_type.lower() in ('mbtiles', 'pmtiles'):
             merger = TerrainRGBMerger(
                 sources,
                 output_path=config.get('output_path', 'output.mbtiles'),

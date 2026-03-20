@@ -21,6 +21,24 @@ import functools
 from scipy.ndimage import gaussian_filter # Import gaussian filter
 import time
 import multiprocessing #Import the multiprocessing library
+import os
+import sys
+
+# ---------------------------------------------------------------------------
+# PMTiles support (optional – requires the PMTiles submodule)
+# ---------------------------------------------------------------------------
+_pmtiles_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "PMTiles", "python", "pmtiles")
+)
+if _pmtiles_path not in sys.path:
+    sys.path.insert(0, _pmtiles_path)
+try:
+    from pmtiles.reader import Reader, MmapSource, all_tiles as _pmtiles_all_tiles
+    from pmtiles.tile import zxy_to_tileid as _zxy_to_tileid, tileid_to_zxy as _tileid_to_zxy
+    from pmtiles.convert import mbtiles_to_pmtiles as _mbtiles_to_pmtiles
+    _PMTILES_AVAILABLE = True
+except ImportError:
+    _PMTILES_AVAILABLE = False
 
 def retry(attempts, base_delay=1, max_delay=10):
     def decorator(func):
@@ -63,11 +81,54 @@ class MBTilesSource:
 
 
 @dataclass
+class PMTilesSource:
+    """Configuration for a PMTiles source file"""
+    path: Path
+    encoding: EncodingType
+    height_adjustment: float = 0.0
+    base_val: float = -10000
+    interval: float = 0.1
+    mask_values: list = field(default_factory=lambda: [0.0])
+
+    def __post_init__(self):
+        if not self.path.exists():
+            raise ValueError(f"Source file does not exist: {self.path}")
+
+
+@dataclass
 class TileData:
     """Container for decoded tile data"""
     data: np.ndarray
     meta: dict
     source_zoom: int
+
+
+class _PMTilesConn:
+    """Thin wrapper around an open PMTiles file used as a *source_conns* value."""
+
+    def __init__(self, path):
+        if not _PMTILES_AVAILABLE:
+            raise ImportError(
+                "PMTiles Python library not found. "
+                "Run: git submodule update --init --recursive"
+            )
+        self._file = open(path, "rb")
+        self._get_bytes = MmapSource(self._file)
+        self._reader = Reader(self._get_bytes)
+
+    def get(self, z: int, x: int, y: int):
+        """Return raw tile bytes at XYZ coordinates, or None."""
+        return self._reader.get(z, x, y)
+
+    def header(self):
+        return self._reader.header()
+
+    def all_tiles(self):
+        """Iterate all tiles as ((z, x, y_xyz), data) in XYZ (north-up) convention."""
+        return _pmtiles_all_tiles(self._get_bytes)
+
+    def close(self):
+        self._file.close()
 
 
 class TerrainRGBMerger:
@@ -217,17 +278,24 @@ class TerrainRGBMerger:
         current_x, current_y = x, y
         
         while current_zoom >= 0:
-            conn = source_conns[source.path] # get the database connection from the dictionary
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-                (current_zoom, current_x, current_y)
-            )
-            result = cursor.fetchone()
-            
+            conn = source_conns[source.path]
+
+            if isinstance(conn, _PMTilesConn):
+                # PMTiles uses XYZ (north-up) y; the merger works with TMS y → flip
+                xyz_y = (1 << current_zoom) - 1 - current_y
+                raw = conn.get(current_zoom, current_x, xyz_y)
+                result = (raw,) if raw is not None else None
+            else:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                    (current_zoom, current_x, current_y)
+                )
+                result = cursor.fetchone()
+
             if result is not None:
                 try:
-                    data_meta = self._decode_tile(result[0], mercantile.Tile(current_x, current_y, current_zoom), source.encoding, source, source_index) #pass in source
+                    data_meta = self._decode_tile(result[0], mercantile.Tile(current_x, current_y, current_zoom), source.encoding, source, source_index)
                     if data_meta[0] is None:
                         return None
                     if data_meta[0].size == 0:
@@ -399,7 +467,10 @@ class TerrainRGBMerger:
         self.logger.info(f"Processing zoom level ")
         source_conns = {}
         for s in self.sources:
-            source_conns[s.path] = sqlite3.connect(s.path)
+            if isinstance(s, PMTilesSource):
+                source_conns[s.path] = _PMTilesConn(s.path)
+            else:
+                source_conns[s.path] = sqlite3.connect(s.path)
         
         # Get list of tiles to process
         tiles = self._get_tiles_for_zoom(zoom, source_conns)
@@ -409,7 +480,8 @@ class TerrainRGBMerger:
         tasks = [
             (
                 tile,
-                [(s.path, s.encoding.value, s.height_adjustment, s.base_val, s.interval, s.mask_values)
+                [(str(s.path), s.encoding.value, s.height_adjustment, s.base_val, s.interval, s.mask_values,
+                  'pmtiles' if isinstance(s, PMTilesSource) else 'mbtiles')
                  for s in self.sources],
                 self.output_path,
                 self.output_encoding.value,
@@ -450,23 +522,36 @@ class TerrainRGBMerger:
             else:
                 source = self.sources[-1]
             conn = source_conns[source.path]
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT DISTINCT tile_column, tile_row FROM tiles WHERE zoom_level = ?',
-                (zoom,)
-            )
-            rows = cursor.fetchall()
-            
-            if not rows:
-                self.logger.warning(f"No tiles found for zoom level {zoom} in source {source.path}")
+            if isinstance(conn, _PMTilesConn):
+                # PMTiles: iterate all tiles and filter by zoom.
+                # all_tiles yields ((z, x, y_xyz), data) in XYZ (north-up) convention;
+                # convert to TMS y to match the merger's internal coordinate convention.
+                found = False
+                for (z, x, xyz_y), _ in conn.all_tiles():
+                    if z == zoom:
+                        tms_y = (1 << z) - 1 - xyz_y  # XYZ → TMS
+                        tiles.add(mercantile.Tile(x=x, y=tms_y, z=z))
+                        found = True
+                if not found:
+                    self.logger.warning(f"No tiles found for zoom level {zoom} in source {source.path}")
             else:
-                #self.logger.debug(f"Rows fetched for zoom level : ")
-                for row in rows:
-                    if isinstance(row, tuple) and len(row) == 2:
-                        x, y = row
-                        tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
-                    else:
-                        self.logger.warning(f"Skipping invalid row: {row}")
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT DISTINCT tile_column, tile_row FROM tiles WHERE zoom_level = ?',
+                    (zoom,)
+                )
+                rows = cursor.fetchall()
+                
+                if not rows:
+                    self.logger.warning(f"No tiles found for zoom level {zoom} in source {source.path}")
+                else:
+                    #self.logger.debug(f"Rows fetched for zoom level : ")
+                    for row in rows:
+                        if isinstance(row, tuple) and len(row) == 2:
+                            x, y = row
+                            tiles.add(mercantile.Tile(x=x, y=y, z=zoom))
+                        else:
+                            self.logger.warning(f"Skipping invalid row: {row}")
         
         return list(tiles)
 
@@ -478,6 +563,13 @@ class TerrainRGBMerger:
             source = self.sources[self.bounds_source]
         else:
             source = self.sources[-1]
+
+        if isinstance(source, PMTilesSource):
+            if not _PMTILES_AVAILABLE:
+                raise ImportError("PMTiles library not available. Run: git submodule update --init --recursive")
+            with open(source.path, "rb") as f:
+                reader = Reader(MmapSource(f))
+                return reader.header()["max_zoom"]
 
         with sqlite3.connect(source.path) as conn:
              cursor = conn.cursor()
@@ -491,12 +583,34 @@ class TerrainRGBMerger:
         max_zoom = self.max_zoom if self.max_zoom is not None else self.get_max_zoom_level()
         self.logger.info(f"Processing zoom levels {min_zoom} to {max_zoom}")
 
-        with MBTilesDatabase(self.output_path) as db:
-             db.add_bounds_center_metadata(self.bounds, self.min_zoom, max_zoom, self.output_encoding.value, self.output_image_format.value, "Merged Terrain")
+        output_is_pmtiles = str(self.output_path).lower().endswith('.pmtiles')
+        if output_is_pmtiles:
+            if not _PMTILES_AVAILABLE:
+                raise ImportError(
+                    "PMTiles Python library not found. "
+                    "Run: git submodule update --init --recursive"
+                )
+            import tempfile
+            _fd, tmp_mbtiles = tempfile.mkstemp(suffix='.mbtiles')
+            os.close(_fd)
+            actual_output = self.output_path
+            self.output_path = Path(tmp_mbtiles)
 
+        try:
+            with MBTilesDatabase(self.output_path) as db:
+                db.add_bounds_center_metadata(self.bounds, self.min_zoom, max_zoom, self.output_encoding.value, self.output_image_format.value, "Merged Terrain")
 
-        for zoom in range(min_zoom, max_zoom + 1):
-             self.process_zoom_level(zoom, verbose)
+            for zoom in range(min_zoom, max_zoom + 1):
+                self.process_zoom_level(zoom, verbose)
+
+            if output_is_pmtiles:
+                self.logger.info(f"Converting merged MBTiles to PMTiles: {actual_output}")
+                _mbtiles_to_pmtiles(str(self.output_path), str(actual_output), max_zoom)
+        finally:
+            if output_is_pmtiles:
+                self.output_path = actual_output
+                if os.path.exists(tmp_mbtiles):
+                    os.unlink(tmp_mbtiles)
 
         self.logger.info("Completed processing all zoom levels")
 
@@ -516,18 +630,29 @@ def process_tile_task(task_tuple: tuple) -> None:
     sources = []
     db = None
     try:
-        # Reconstruct MBTilesSource objects and create connections
-        for path, encoding, height_adj, base_val, interval, mask_vals in source_configs:
-            source = MBTilesSource(
-                path=Path(path),
-                encoding=EncodingType(encoding),
-                height_adjustment=height_adj,
-                base_val=base_val,
-                interval=interval,
-                mask_values=mask_vals
-            )
+        # Reconstruct source objects and create connections
+        for path, encoding, height_adj, base_val, interval, mask_vals, source_type in source_configs:
+            if source_type == 'pmtiles':
+                source = PMTilesSource(
+                    path=Path(path),
+                    encoding=EncodingType(encoding),
+                    height_adjustment=height_adj,
+                    base_val=base_val,
+                    interval=interval,
+                    mask_values=mask_vals
+                )
+                source_conns[source.path] = _PMTilesConn(path)
+            else:
+                source = MBTilesSource(
+                    path=Path(path),
+                    encoding=EncodingType(encoding),
+                    height_adjustment=height_adj,
+                    base_val=base_val,
+                    interval=interval,
+                    mask_values=mask_vals
+                )
+                source_conns[source.path] = sqlite3.connect(source.path)
             sources.append(source)
-            source_conns[source.path] = sqlite3.connect(source.path)
 
         # create instance
         merger_instance = TerrainRGBMerger(sources, output_path, output_encoding=EncodingType(output_encoding), output_nodata = output_nodata, resampling=resampling, sparse_tiles = sparse_tiles, output_image_format=ImageFormat(output_format))

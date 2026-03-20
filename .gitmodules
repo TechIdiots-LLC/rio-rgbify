@@ -1,0 +1,3 @@
+[submodule "PMTiles"]
+	path = PMTiles
+	url = https://github.com/protomaps/PMTiles.git

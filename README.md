@@ -1,16 +1,21 @@
 # rio-rgbify
-Encode arbitrary bit depth rasters in pseudo base-256 as RGB
+Encode arbitrary bit depth rasters in pseudo base-256 as RGB, outputting to **MBTiles** or **PMTiles** format.
 
 ## Installation
 
 ```
-git clone https://github.com/acalcutt/rio-rgbify.git
+git clone --recurse-submodules https://github.com/acalcutt/rio-rgbify.git
 
 cd rio-rgbify
 
 pip install -e '.[test]'
-
 ```
+
+> **Note:** The `--recurse-submodules` flag is required to initialise the bundled PMTiles library. If you already cloned without it, run:
+> ```
+> git submodule update --init --recursive
+> ```
+
 ## Required Packages on Ubuntu
 To run `rio-rgbify` on Ubuntu, you will need to make sure you have the following installed:
 
@@ -29,14 +34,16 @@ sudo apt install python3-dev libspatialindex-dev libgeos-dev gdal-bin python3-gd
 
 ## CLI usage
 
-`rio-rgbify` now has two subcommands `rgbify` and `merge`.
+`rio-rgbify` has two subcommands: `rgbify` and `merge`.
+
+---
 
 ### `rgbify` Command
 
-The `rgbify` command is used to encode a raster into RGB and output it as a GeoTIFF or an MBTiles file.
+Encodes a source raster into RGB tiles and writes them to an **MBTiles** or **PMTiles** file.
 
--   Input can be any raster readable by `rasterio`
--   Output can be a GeoTIFF or an MBTiles file, both created using tile-based processing.
+- Input can be any raster readable by `rasterio`
+- Output format is determined automatically from the file extension (`.pmtiles` → PMTiles, anything else → MBTiles), or can be forced with `--output-format`
 
 ```
 Usage: rio rgbify [OPTIONS] SRC_PATH DST_PATH
@@ -48,99 +55,157 @@ Options:
                                   encoding on [DEFAULT=0]
   -i, --interval FLOAT            Describes the precision of the output, by
                                   incrementing interval [DEFAULT=1]
-  -r, --round-digits INTEGER      Less significants encoded bits to be set to
-                                  0. Round the values, but have better images
+  -r, --round-digits INTEGER      Less significant encoded bits to be set to
+                                  0. Rounds values but improves image
                                   compression [DEFAULT=0]
   -e, --encoding [mapbox|terrarium]
                                   RGB encoding to use on the tiles
   --bidx INTEGER                  Band to encode [DEFAULT=1]
-  --max-z INTEGER                 Maximum zoom to tile (.mbtiles output only)
-  --bounding-tile TEXT            Bounding tile '[, , ]' to limit output tiles
-                                  (.mbtiles output only)
-  --min-z INTEGER                 Minimum zoom to tile (.mbtiles output only)
-  --format [png|webp]             Output tile format (.mbtiles output only)
+  --max-z INTEGER                 Maximum zoom level to tile
+  --bounding-tile TEXT            Bounding tile '[x, y, z]' to limit output
+  --min-z INTEGER                 Minimum zoom level to tile
+  --format [png|webp]             Output tile image format [DEFAULT=png]
+  --output-format [mbtiles|pmtiles]
+                                  Output archive format. Defaults to auto-
+                                  detect from DST_PATH extension.
   -j, --workers INTEGER           Workers to run [DEFAULT=4]
+  --batch-size INTEGER            Number of tiles per batch per process
+  --resampling [nearest|bilinear|cubic|cubic_spline|lanczos|average|mode|gauss]
+                                  Resampling method [DEFAULT=nearest]
   -v, --verbose
-  --batch-size INTEGER            Number of tiles to process at a time in each
-                                  process.
-  --resampling [nearest|bilinear|cubic|cubic_spline|lanczos|average|mode|gaussian]
-                                  Resampling method
-  --help                          Show this message and exit
+  -h, --help                      Show this message and exit.
 ```
 
-### Mapbox TerrainRGB example
+#### Mapbox TerrainRGB — MBTiles output
 
-```
-rio rgbify -e mapbox -b -10000 -i 0.1 --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt DST_PATH.mbtiles
+```bash
+rio rgbify -e mapbox -b -10000 -i 0.1 --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt output.mbtiles
 ```
 
-### Mapzen Terrarium example
+#### Mapbox TerrainRGB — PMTiles output
 
+```bash
+rio rgbify -e mapbox -b -10000 -i 0.1 --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt output.pmtiles
 ```
-rio rgbify -e terrarium --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt DST_PATH.mbtiles
+
+#### Mapzen Terrarium — MBTiles output
+
+```bash
+rio rgbify -e terrarium --min-z 0 --max-z 8 -j 24 --format png SRC_PATH.vrt output.mbtiles
 ```
+
+---
 
 ### `merge` Command
 
-The `merge` command is used to merge multiple MBTiles or Raster files into one output MBTiles file. This is done by taking a JSON configuration file.
+Merges multiple **MBTiles**, **PMTiles**, or **raster** sources into a single output file. Sources are layered in priority order — the first source takes precedence, and later sources fill gaps.
+
+The output file can be **MBTiles** or **PMTiles**. When the output path ends in `.pmtiles`, the merge is written to a temporary MBTiles scratch file (keeping parallel SQLite writes intact) then converted to PMTiles at the end — no large in-memory buffers are needed.
 
 ```
 Usage: rio merge [OPTIONS]
 
 Options:
- -c, --config PATH       Path to the JSON configuration file [required]
- -j, --workers INTEGER   Workers to run [DEFAULT=4]
- -z, --min-zoom INTEGER       Minimum zoom level to generate.
- -v, --verbose
- --help               Show this message and exit.
+  -c, --config PATH       Path to the JSON configuration file [required]
+  -j, --workers INTEGER   Number of parallel worker processes
+  -v, --verbose
+  -h, --help              Show this message and exit.
 ```
 
 #### Configuration File
 
-The `merge` command makes use of a json configuration file which should be passed in as the `--config` parameter. The JSON configuration file should follow the following structure:
+The `merge` command reads a JSON configuration file passed via `--config`.
+
+##### MBTiles / PMTiles sources → MBTiles output
 
 ```json
 {
-    "source_type": "mbtiles",
-    "sources": [
-        {
-            "path": "/path/to/bathymetry.mbtiles",
-            "encoding": "mapbox",
-            "height_adjustment": -5.0
-        },
-        {
-            "path": "/path/to/base_terrain.mbtiles",
-            "encoding": "mapbox",
-            "height_adjustment": 0.0,
-            "base_val": -10000,
-            "interval": 0.1,
-             "mask_values": [-1,0]
-        },
-        {
-            "path": "/path/to/secondary_terrain.mbtiles",
-            "encoding": "terrarium",
-            "height_adjustment": 10.0
-        }
-    ],
+    "output_type": "mbtiles",
     "output_path": "/path/to/output.mbtiles",
     "output_encoding": "mapbox",
-    "output_nodata": -9999,
     "output_format": "webp",
+    "output_nodata": -9999,
     "resampling": "bilinear",
     "sparse_tiles": true,
     "min_zoom": 2,
     "max_zoom": 10,
     "gaussian_blur_sigma": 0.2,
-    "bounds": [-10,10,20,50],
-    "bounds_source": 1
+    "bounds": [-10, 10, 20, 50],
+    "bounds_source": 1,
+    "sources": [
+        {
+            "source_type": "mbtiles",
+            "path": "/path/to/high_res.mbtiles",
+            "encoding": "mapbox",
+            "height_adjustment": 0.0,
+            "base_val": -10000,
+            "interval": 0.1,
+            "mask_values": [-1, 0]
+        },
+        {
+            "source_type": "pmtiles",
+            "path": "/path/to/base_terrain.pmtiles",
+            "encoding": "mapbox",
+            "height_adjustment": 0.0,
+            "base_val": -10000,
+            "interval": 0.1,
+            "mask_values": [0.0]
+        },
+        {
+            "source_type": "mbtiles",
+            "path": "/path/to/bathymetry.mbtiles",
+            "encoding": "mapbox",
+            "height_adjustment": -5.0
+        }
+    ]
 }
 ```
 
+##### MBTiles / PMTiles sources → PMTiles output
+
+Set `"output_type": "pmtiles"` and use a `.pmtiles` output path. Everything else is identical to the MBTiles example above.
+
 ```json
 {
-    "source_type": "raster",
+    "output_type": "pmtiles",
+    "output_path": "/path/to/output.pmtiles",
+    "output_encoding": "mapbox",
+    "output_format": "webp",
     "sources": [
         {
+            "source_type": "pmtiles",
+            "path": "/path/to/high_res.pmtiles",
+            "encoding": "mapbox"
+        },
+        {
+            "source_type": "mbtiles",
+            "path": "/path/to/low_res.mbtiles",
+            "encoding": "mapbox"
+        }
+    ],
+    "min_zoom": 0,
+    "max_zoom": 12
+}
+```
+
+##### Raster sources → MBTiles output
+
+```json
+{
+    "output_type": "raster",
+    "output_path": "/path/to/output.mbtiles",
+    "output_encoding": "terrarium",
+    "output_format": "webp",
+    "output_nodata": -9999,
+    "resampling": "bilinear",
+    "sparse_tiles": true,
+    "min_zoom": 2,
+    "max_zoom": 10,
+    "bounds": [-10, 10, 20, 50],
+    "bounds_source": 1,
+    "sources": [
+        {
+            "source_type": "raster",
             "path": "/path/to/raster1.tif",
             "height_adjustment": -5.0,
             "base_val": -10000,
@@ -148,72 +213,63 @@ The `merge` command makes use of a json configuration file which should be passe
             "mask_values": [0]
         },
         {
+            "source_type": "raster",
             "path": "/path/to/raster2.tif",
             "height_adjustment": 10.0,
-            "mask_values": [-1,-32767]
+            "mask_values": [-1, -32767]
         }
-    ],
-    "output_path": "/path/to/output.mbtiles",
-    "output_nodata": -9999,
-    "output_encoding": "terrarium",
-    "output_format": "webp",
-    "resampling": "bilinear",
-    "sparse_tiles": true,
-    "min_zoom": 2,
-    "max_zoom": 10,
-    "bounds": [-10,10,20,50],
-    "bounds_source": 1
+    ]
 }
 ```
 
-**Explanation:**
+#### Configuration Reference
 
-*   **`source_type` (Optional, Default: `mbtiles`):** This is a new key which tells the program whether the sources are `mbtiles` or `raster`.
-*   **`sources` (Required):**
-    *   A list of objects defining the input MBTiles or Raster files.
-    *   **MBTiles Sources**:
-        *   `path` (Required): The path to the MBTiles file.
-        *   `encoding` (Optional, Default: `"mapbox"`): The encoding used for the MBTiles file (`"mapbox"` or `"terrarium"`).
-        *   `height_adjustment` (Optional, Default: `0.0`): A floating-point value (in meters) to adjust the elevation of that particular input. Positive values raise the elevation, and negative values lower the elevation.
-        *   `base_val` (Optional, Default: `-10000`): A floating-point value which will be the base value for mapbox encoded tiles, in meters.
-        *    `interval` (Optional, Default: `0.1`): A floating-point value that represents the vertical distance between each level of encoded height.
-        *   `mask_values` (Optional, Default `[0.0]`): A list of numbers representing the elevation values to mask.
-     *   **Raster Sources**:
-        *   `path` (Required): The path to the raster file.
-        *   `height_adjustment` (Optional, Default: `0.0`): A floating-point value (in meters) to adjust the elevation of that particular input. Positive values raise the elevation, and negative values lower the elevation.
-        *   `base_val` (Optional, Default: `-10000`): A floating-point value which will be the base value for mapbox encoded tiles, in meters.
-        *   `interval` (Optional, Default: `0.1`): A floating-point value that represents the vertical distance between each level of encoded height.
-        *   `mask_values` (Optional, Default `[0.0]`): A list of numbers representing the elevation values to mask.
-*   `output_path` (Optional, Default: `"output.mbtiles"`): The output path for the merged MBTiles file.
-*   `output_encoding` (Optional, Default: `"mapbox"`): The output encoding to use (`"mapbox"` or `"terrarium"`).
-*   `output_nodata` (Optional, Default: `None`): The value to use for output nodata replacement.  If set, `NaN` values will be replaced with this value. If `None`, no nodata replacement is performed.
-*   `output_format` (Optional, Default: `"png"`): The output image format (`"png"` or `"webp"`).
-*   `resampling` (Optional, Default: `"bilinear"`): The method to use for resampling (`"nearest"`, `"bilinear"`, `"cubic"`, `"cubic_spline"`, `"lanczos"`, `"average"`, `"mode"`, or `"gauss"`).
-*   `sparse_tiles` (Optional, Default: false): A boolean that determines whether to skip writing tiles that only contain upscaled data. If true, tiles consisting entirely of upscaled data will not be written to the output MBTiles file.
-*   `min_zoom` (Optional, Default: `0`): The minimum zoom level to process.
-*   `max_zoom` (Optional, Default: uses max from last file): The maximum zoom level to process.
-*  `bounds` (Optional, Default: bounds of last file): A bounding box to limit the tiles being generated. Should be in the format: `[w,s,e,n]`. **Overrides `bounds_source` if set**.
-*  `bounds_source` (Optional, Default: Uses last source): An integer which corresponds to the source in the `sources` array which should be used to generate bounds and tiles from. **The index starts at 0.**
-* `gaussian_blur_sigma` (Optional, Default: `0.2`): A floating-point value that controls the base strength of the gaussian blur applied to source tiles during upscaling. The actual blur applied is scaled based on the zoom level difference between the source and the output tile.
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `output_type` | No | `"mbtiles"` | Output format: `"mbtiles"`, `"pmtiles"`, or `"raster"` |
+| `output_path` | No | `"output.mbtiles"` | Path for the merged output file |
+| `output_encoding` | No | `"mapbox"` | Output RGB encoding: `"mapbox"` or `"terrarium"` |
+| `output_format` | No | `"png"` | Output tile image format: `"png"` or `"webp"` |
+| `output_nodata` | No | `null` | If set, NaN elevation values are replaced with this number |
+| `resampling` | No | `"bilinear"` | Resampling method: `"nearest"`, `"bilinear"`, `"cubic"`, `"cubic_spline"`, `"lanczos"`, `"average"`, `"mode"`, `"gauss"` |
+| `sparse_tiles` | No | `false` | Skip tiles that contain only upscaled data |
+| `min_zoom` | No | `0` | Minimum zoom level to process |
+| `max_zoom` | No | max zoom of bounds source | Maximum zoom level to process |
+| `bounds` | No | bounds of bounds source | Bounding box `[w, s, e, n]` to limit tile generation. Overrides `bounds_source`. |
+| `bounds_source` | No | last source | Index (0-based) of the source whose tile list defines which tiles to process |
+| `gaussian_blur_sigma` | No | `0.2` | Base sigma for Gaussian blur applied during upscaling (actual sigma = `gaussian_blur_sigma × zoom_diff`) |
 
-  **Understanding Zoom-Level Dependent Blurring:**
+**Per-source fields** (inside the `sources` array):
 
-   The `gaussian_blur_sigma` parameter no longer directly represents the amount of blur applied. Instead, it serves as a *base* value for the blur. The actual amount of blurring is now *dynamically* adjusted based on the zoom level difference between the source tile and the target tile:
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `source_type` | No | `"mbtiles"` | Source type: `"mbtiles"`, `"pmtiles"`, or `"raster"` |
+| `path` | Yes | — | Path to the source file |
+| `encoding` | No | `"mapbox"` | RGB encoding of the source: `"mapbox"` or `"terrarium"` (MBTiles / PMTiles only) |
+| `height_adjustment` | No | `0.0` | Metres to add/subtract from the elevation of this source |
+| `base_val` | No | `-10000` | Base elevation value for decoding (mapbox default) |
+| `interval` | No | `0.1` | Elevation interval used when decoding |
+| `mask_values` | No | `[0.0]` | Elevation values to treat as nodata |
 
-    *   **Base Blur:** The `gaussian_blur_sigma` sets the starting point for how much blurring to apply.
-    *   **Dynamic Adjustment:** When a tile is upscaled, the amount of blurring is scaled by the absolute difference between the source zoom level and the target zoom level. For example, if `gaussian_blur_sigma` is `0.2`, a tile that is upscaled by 2 zoom levels will have a sigma of 0.4 applied.
-    *   **Adaptive Smoothing:** This means tiles that require significant upscaling receive more smoothing, reducing blockiness, while tiles that are closer to their target zoom receive less smoothing, preserving detail.
-    *   **Linear Scaling**: The blurring is scaled linearly by the zoom difference. This value can be changed by multiplying by a different number, and will be considered in later versions.
+#### Understanding zoom-level dependent blurring
 
-    **Choosing a `gaussian_blur_sigma` Value:**
-
-    As the `gaussian_blur_sigma` now acts as a base value, a good start is to aim for the ideal smoothing at a single zoom difference. For example if you want 0.4 smoothing when the zoom difference is 2, then use 0.2.
-    Start with the default (`0.2`) and experiment, using higher values if the upscaling looks too "bumpy" or if you want more smoothing, and lower values if you think its too blurry.
-
-The merge logic works by merging the input sources in order, applying the height adjustment as it merges. The last input source will be the base layer for tiles, and the bounds of this last file will be used if no bounds are passed in, unless a `bounds_source` parameter has been set.
-
-## Merge Example
+The `gaussian_blur_sigma` value is a *base* scalar. When a tile needs upscaling the actual sigma applied is:
 
 ```
+actual_sigma = gaussian_blur_sigma × |target_zoom − source_zoom|
+```
+
+This means tiles requiring significant upscaling receive proportionally more smoothing (reducing blockiness), while tiles at or near their native zoom receive minimal smoothing. Start with the default (`0.2`) and increase it if upscaled tiles look blocky, or decrease it if they look too blurry.
+
+The merge processes sources in order — the first source takes precedence and later sources fill gaps where the higher-priority sources have no data.
+
+## Example commands
+
+```bash
+# Merge with MBTiles output
 rio merge --config config.json -j 24
+
+# Merge with PMTiles output (set output_type and output_path in config)
+rio merge --config config_pmtiles.json -j 24
 ```
+

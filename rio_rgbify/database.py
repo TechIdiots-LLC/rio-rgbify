@@ -90,6 +90,10 @@ class MBTilesDatabase:
         # self.conn.execute('pragma journal_mode=DELETE')
         self.conn.close()
 
+    def commit(self):
+        """Commit the current transaction."""
+        self.conn.commit()
+
     def add_metadata(self, metadata: dict):
         """Adds metadata to the mbtiles db"""
         for key, value in metadata.items():
