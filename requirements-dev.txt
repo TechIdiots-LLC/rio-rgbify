@@ -13,4 +13,5 @@ setuptools>=0.9.8
 scipy
 mercantile
 Pillow
+psutil
 wheel

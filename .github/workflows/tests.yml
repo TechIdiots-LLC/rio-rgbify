@@ -42,7 +42,7 @@ jobs:
         shell: bash -el {0}
         run: |
           pip install -e ".[test]"
-          pip install hypothesis scipy mercantile Pillow pytest pytest-cov
+          pip install hypothesis scipy mercantile Pillow pytest pytest-cov psutil
 
       - name: Run tests
         shell: bash -el {0}
