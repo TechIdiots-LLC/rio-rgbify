@@ -12,6 +12,7 @@ from rasterio import transform
 from rasterio.warp import reproject, transform_bounds
 from rasterio.enums import Resampling
 from rio_rgbify.database import MBTilesDatabase
+from rio_rgbify.pmtiles_writer import PMTilesWriter
 from rio_rgbify.image import ImageEncoder
 import logging
 import signal
@@ -140,6 +141,7 @@ class RGBTiler:
         format="webp",
         resampling=Resampling.nearest,
         bounding_tile=None,
+        output_format="mbtiles",
     ):
         self.inpath = inpath
         self.outpath = outpath
@@ -152,6 +154,7 @@ class RGBTiler:
         self.base_val = base_val
         self.round_digits = round_digits
         self.resampling = resampling
+        self.output_format = output_format
 
     @staticmethod
     def _tile_range(min_tile, max_tile):
@@ -284,7 +287,7 @@ class RGBTiler:
                             print(f"Processed {total_processed}/{total_tiles} tiles")
                         
                         if i % batch_size == 0 or i == total_tiles:   # Commit after each batch or at the end
-                            self.db.conn.commit()
+                            self.db.commit()
                             print("Committed to database")
 
                     print(f"Completed processing {total_processed} tiles")
@@ -303,7 +306,10 @@ class RGBTiler:
 
     def __enter__(self):
         try:
-            self.db = MBTilesDatabase(self.outpath)
+            if self.output_format == "pmtiles":
+                self.db = PMTilesWriter(self.outpath)
+            else:
+                self.db = MBTilesDatabase(self.outpath)
         except Exception as e:
             logging.error(f"Failed to initialize database: {e}")
             self.db = None
