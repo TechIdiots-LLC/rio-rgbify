@@ -681,8 +681,12 @@ class TestMergeCLI:
 #   source[1] = GEBCO (bathymetry, fills ocean gaps), mask_values=[-10000]
 # ---------------------------------------------------------------------------
 
-_GEBCO_FIXTURE = Path(__file__).parent / "fixtures" / "gebco_sample.mbtiles"
-_JAXA_FIXTURE  = Path(__file__).parent / "fixtures" / "jaxa_sample.mbtiles"
+_GEBCO_FIXTURE      = Path(__file__).parent / "fixtures" / "gebco_sample.mbtiles"
+_JAXA_FIXTURE       = Path(__file__).parent / "fixtures" / "jaxa_sample.mbtiles"
+_EXPECTED_TILES_DIR = Path(__file__).parent / "expected"
+
+# Key tiles extracted by test/generate_expected_tiles.py: (z, x, y)
+_REFERENCE_KEY_TILES = [(0, 0, 0), (2, 2, 1), (2, 0, 2)]
 
 
 @pytest.mark.skipif(
@@ -827,3 +831,68 @@ class TestLiveMerge:
         )
         assert result.exit_code == 0, result.output + str(result.exception or "")
         assert os.path.exists(out)
+
+    @pytest.mark.skipif(
+        not any(
+            (_EXPECTED_TILES_DIR / f"z{z}_x{x}_y{y}.png").exists()
+            for z, x, y in _REFERENCE_KEY_TILES
+        ),
+        reason=(
+            "Reference tiles not found — run `python test/generate_expected_tiles.py`"
+            " to create them"
+        ),
+    )
+    def test_output_matches_expected_tiles(self, tmp_path):
+        """
+        Decoded elevation values in the merged output must match pre-generated
+        reference PNGs within ±1 m tolerance.
+
+        The reference tiles in test/fixtures/expected/ are produced with PNG
+        output (lossless) by running test/generate_expected_tiles.py.  Re-run
+        that script whenever you intentionally change merger behaviour.
+        """
+        # Use PNG output so our results are also lossless and directly comparable
+        # against the reference PNGs.
+        result, out = self._run_merge(tmp_path, extra_config={"output_format": "png"})
+        assert result.exit_code == 0, result.output + str(result.exception or "")
+
+        conn = sqlite3.connect(out)
+        mismatches = []
+
+        for z, x, y in _REFERENCE_KEY_TILES:
+            expected_path = _EXPECTED_TILES_DIR / f"z{z}_x{x}_y{y}.png"
+            if not expected_path.exists():
+                continue  # skip tiles that weren't generated
+
+            # Decode reference tile -> elevation float64 array
+            ref_arr  = np.array(Image.open(expected_path).convert("RGB")).astype(np.float64)
+            ref_elev = -10000 + (
+                (ref_arr[:, :, 0] * 256 * 256
+                 + ref_arr[:, :, 1] * 256
+                 + ref_arr[:, :, 2]) * 0.1
+            )
+
+            # Decode output tile -> elevation float64 array
+            row = conn.execute(
+                "SELECT tile_data FROM tiles"
+                " WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                (z, x, y),
+            ).fetchone()
+            assert row is not None, f"Tile z={z}/x={x}/y={y} missing from output"
+
+            out_arr  = np.array(Image.open(io.BytesIO(row[0])).convert("RGB")).astype(np.float64)
+            out_elev = -10000 + (
+                (out_arr[:, :, 0] * 256 * 256
+                 + out_arr[:, :, 1] * 256
+                 + out_arr[:, :, 2]) * 0.1
+            )
+
+            # Allow ±1 m — catches regression while tolerating minor float rounding
+            if not np.allclose(ref_elev, out_elev, atol=1.0):
+                max_delta = float(np.max(np.abs(ref_elev - out_elev)))
+                mismatches.append(
+                    f"z={z}/x={x}/y={y}: max delta = {max_delta:.1f} m"
+                )
+
+        conn.close()
+        assert not mismatches, "Elevation mismatch vs reference: " + "; ".join(mismatches)
