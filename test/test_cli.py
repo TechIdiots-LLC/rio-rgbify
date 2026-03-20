@@ -1,12 +1,14 @@
 import os
-
+import json
 import click
 from click.testing import CliRunner
 
 import numpy as np
+import pytest
 
 import rasterio as rio
-from rio_rgbify.scripts.cli import rgbify
+from rio_rgbify.scripts.cli import main_group as cli, rgbify, merge
+from rio_rgbify.database import MBTilesDatabase
 
 from raster_tester.compare import affaux, upsample_array
 
@@ -34,6 +36,7 @@ def flex_compare(r1, r2, thresh=10):
     return not np.any(tdiff > thresh)
 
 
+@pytest.mark.skip(reason="Single-file GeoTIFF output mode removed in rewrite; rgbify now always writes MBTiles and requires --min-z/--max-z")
 def test_cli_good_elev():
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -308,3 +311,218 @@ def test_bad_input_format():
         )
         assert result.exit_code == 1
         assert result.exception
+
+def test_merge_command():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Create a sample config file
+        config_data = {
+            "sources": [
+                {"path": "test1.mbtiles", "encoding": "mapbox", "height_adjustment": 5},
+                {"path": "test2.mbtiles", "encoding": "terrarium", "height_adjustment": -10}
+                ],
+            "output_path": "merged.mbtiles",
+            "output_format": "png",
+            "output_encoding": "mapbox",
+            "resampling": "bilinear"
+        }
+        
+        with open("config.json", "w") as f:
+            json.dump(config_data, f)
+
+        # Create valid (empty) MBTiles databases so merger can query them
+        with MBTilesDatabase("test1.mbtiles") as _:
+            pass
+        with MBTilesDatabase("test2.mbtiles") as _:
+            pass
+
+        result = runner.invoke(
+            cli,
+            [
+                "merge",
+                "--config",
+                "config.json",
+                "-j",
+                 "1"
+            ]
+        )
+        assert result.exit_code == 0
+        assert os.path.exists("merged.mbtiles")
+
+
+def test_mbtiler_resampling_cli():
+  runner = CliRunner()
+  with runner.isolated_filesystem():
+    out_mbtiles = "output.mbtiles"
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--resampling",
+            "nearest",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--resampling",
+            "bilinear",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--resampling",
+            "cubic",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--resampling",
+            "cubic_spline",
+             "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--resampling",
+            "lanczos",
+            "-j",
+             1,
+        ],
+    )
+    assert result.exit_code == 0
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--resampling",
+            "average",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+             "--resampling",
+            "mode",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+             "--resampling",
+            "gauss",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0
+
+
+def test_mbtiler_baseval_cli():
+  runner = CliRunner()
+  with runner.isolated_filesystem():
+    out_mbtiles = "output.mbtiles"
+    result = runner.invoke(
+        rgbify,
+        [
+            in_elev_src,
+            out_mbtiles,
+            "--min-z",
+            10,
+            "--max-z",
+            11,
+            "--format",
+            "png",
+            "--encoding",
+            "mapbox",
+            "--base-val",
+            "-500",
+            "-j",
+            1,
+        ],
+    )
+    assert result.exit_code == 0

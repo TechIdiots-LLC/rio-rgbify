@@ -1,24 +1,36 @@
-"""rio_rgbify CLI."""
-
 import click
-
+import logging
+from pathlib import Path
+import json
+from rio_rgbify.mbtiler import RGBTiler
+from rio_rgbify.merger import TerrainRGBMerger, MBTilesSource, EncodingType
+from rio_rgbify.raster_merger import RasterRGBMerger, RasterSource
+from rio_rgbify.image import ImageFormat
+from rasterio.enums import Resampling
+from typing import List
 import rasterio as rio
 import numpy as np
-from riomucho import RioMucho
-import json
-from rasterio.rio.options import creation_options
 
-from rio_rgbify.encoders import data_to_rgb
-from rio_rgbify.mbtiler import RGBTiler
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def _rgb_worker(data, window, ij, g_args):
-    return data_to_rgb(
-        data[0][g_args["bidx"] - 1], g_args["encoding"], g_args["base_val"], g_args["interval"], g_args["round_digits"]
-    )
+# def _rgb_worker(data, window, ij, g_args): # Removed _rgb_worker function
+#    return data_to_rgb(
+#        data[0][g_args["bidx"] - 1], g_args["encoding"], g_args["base_val"], g_args["interval"], g_args["round_digits"]
+#    )
 
 
-@click.command("rgbify")
+@click.group(
+    context_settings=dict(help_option_names=["-h", "--help"])
+)
+@click.version_option()
+def main_group():
+    """rio: Command line interface for raster processing"""
+    pass
+
+
+@main_group.command('rgbify', short_help="Create RGB encoded tiles from a raster file.")
 @click.argument("src_path", type=click.Path(exists=True))
 @click.argument("dst_path", type=click.Path(exists=False))
 @click.option(
@@ -60,7 +72,7 @@ def _rgb_worker(data, window, ij, g_args):
     "--bounding-tile",
     type=str,
     default=None,
-    help="Bounding tile '[{x}, {y}, {z}]' to limit output tiles (.mbtiles output only)",
+    help="Bounding tile '[, , ]' to limit output tiles (.mbtiles output only)",
 )
 @click.option(
     "--min-z",
@@ -76,10 +88,17 @@ def _rgb_worker(data, window, ij, g_args):
 )
 @click.option("--workers", "-j", type=int, default=4, help="Workers to run [DEFAULT=4]")
 @click.option("--verbose", "-v", is_flag=True, default=False)
-@click.pass_context
-@creation_options
+@click.option(
+    "--batch-size", type=int, default=None,
+    help="Number of tiles to process at a time in each process."
+)
+@click.option(
+    "--resampling", type=click.Choice(["nearest", "bilinear", "cubic", "cubic_spline", "lanczos", "average", "mode", "gauss"], case_sensitive=False), default="nearest",
+    help="Resampling method"
+)
+# @click.pass_context
+# @creation_options
 def rgbify(
-    ctx,
     src_path,
     dst_path,
     base_val,
@@ -93,58 +112,132 @@ def rgbify(
     format,
     workers,
     verbose,
-    creation_options,
+    batch_size,
+    resampling
 ):
     """rio-rgbify cli."""
-    if dst_path.split(".")[-1].lower() == "tif":
-        with rio.open(src_path) as src:
-            meta = src.profile.copy()
 
-        meta.update(count=3, dtype=np.uint8)
+    if min_z is None or max_z is None:
+        raise ValueError("Zoom range must be provided for mbtile output")
 
-        for c in creation_options:
-            meta[c] = creation_options[c]
+    if max_z < min_z:
+        raise ValueError(
+            "Max zoom  must be greater than min zoom ".format(max_z, min_z)
+        )
 
-        gargs = {"interval": interval, "encoding": encoding, "base_val": base_val, "round_digits": round_digits, "bidx": bidx}
-
-        with RioMucho(
-            [src_path], dst_path, _rgb_worker, options=meta, global_args=gargs
-        ) as rm:
-
-            rm.run(workers)
-
-    elif dst_path.split(".")[-1].lower() == "mbtiles":
-        if min_z is None or max_z is None:
-            raise ValueError("Zoom range must be provided for mbtile output")
-
-        if max_z < min_z:
-            raise ValueError(
-                "Max zoom {0} must be greater than min zoom {1}".format(max_z, min_z)
+    if bounding_tile is not None:
+        try:
+            bounding_tile = json.loads(bounding_tile)
+        except Exception:
+            raise TypeError(
+                "Bounding tile of  is not valid".format(bounding_tile)
             )
 
-        if bounding_tile is not None:
-            try:
-                bounding_tile = json.loads(bounding_tile)
-            except Exception:
-                raise TypeError(
-                    "Bounding tile of {0} is not valid".format(bounding_tile)
+    resampling_enum = Resampling[resampling.lower()]
+
+    with RGBTiler(
+        src_path,
+        dst_path,
+        interval=interval,
+        base_val=base_val,
+        round_digits=round_digits,
+        encoding=encoding,
+        format=format,
+        bounding_tile=bounding_tile,
+        max_z=max_z,
+        min_z=min_z,
+        resampling=resampling_enum,
+    ) as tiler:
+        tiler.run(workers, batch_size = batch_size, verbose = verbose)
+
+
+@main_group.command('merge', short_help='Merge multiple MBTiles or Raster files.')
+@click.option(
+    "--config", "-c", type=click.Path(exists=True),
+    help="Configuration file"
+)
+@click.option(
+    "-j", "--workers", type=int, default=None,
+    help="Number of processes to use for parallel execution."
+)
+@click.option("--verbose", "-v", is_flag=True, default=False)
+def merge(config, workers, verbose):
+    """Merge multiple MBTiles files."""
+    try:
+        with open(config) as f:
+            config = json.load(f)
+
+        sources = []
+        output_type = config.get('output_type', 'mbtiles')
+
+        if output_type.lower() != 'mbtiles' and output_type.lower() != 'raster':
+            logging.error("Invalid output_type, please use `mbtiles` or `raster`")
+            raise Exception(f"Invalid output_type: ")
+
+        for source in config['sources']:
+            source_type = source.get('source_type','mbtiles') # Default to mbtiles if source_type is not set
+            if source_type.lower() != 'mbtiles' and source_type.lower() != 'raster':
+                logging.error("Invalid source_type, please use `mbtiles` or `raster`")
+                raise Exception(f"Invalid source_type: ")
+
+            if source_type.lower() == 'mbtiles':
+                sources.append(
+                    MBTilesSource(
+                        path=Path(source["path"]),
+                        encoding=EncodingType(source.get("encoding", "mapbox").lower()),
+                        height_adjustment=source.get("height_adjustment", 0.0),
+                        base_val=source.get("base_val", -10000),
+                        interval=source.get("interval", 0.1),
+                        mask_values=source.get("mask_values", [0.0])
+                    )
+                )
+            elif source_type.lower() == 'raster':
+                sources.append(
+                    RasterSource(
+                        path=Path(source["path"]),
+                        height_adjustment=source.get("height_adjustment", 0.0),
+                        base_val=source.get("base_val", -10000),
+                        interval=source.get("interval", 0.1),
+                        mask_values=source.get("mask_values", [0.0])
+                    )
                 )
 
-        with RGBTiler(
-            src_path,
-            dst_path,
-            interval=interval,
-            base_val=base_val,
-            round_digits=round_digits,
-            encoding=encoding,
-            format=format,
-            bounding_tile=bounding_tile,
-            max_z=max_z,
-            min_z=min_z,
-        ) as tiler:
-            tiler.run(workers)
+        if output_type.lower() == 'mbtiles':
+            merger = TerrainRGBMerger(
+                sources,
+                output_path=config.get('output_path', 'output.mbtiles'),
+                output_encoding=EncodingType(config.get('output_encoding', "mapbox").lower()),
+                output_nodata=config.get("output_nodata", None),
+                output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
+                resampling=Resampling[config.get('resampling', 'lanczos').lower()],
+                sparse_tiles=config.get("sparse_tiles", False),
+                min_zoom= config.get("min_zoom", 0),
+                max_zoom=config.get("max_zoom", None),
+                bounds=config.get("bounds", None),
+                gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
+                processes=workers,
+                bounds_source = config.get("bounds_source", None),
+            )
+        elif output_type.lower() == 'raster':
+            merger = RasterRGBMerger(
+                sources,
+                output_path=config.get('output_path', 'output.mbtiles'),
+                output_encoding=EncodingType(config.get('output_encoding', "mapbox").lower()),
+                output_nodata=config.get("output_nodata", None),
+                output_image_format=ImageFormat(config.get('output_format', 'webp').lower()),
+                resampling=Resampling[config.get('resampling', 'lanczos').lower()],
+                sparse_tiles=config.get("sparse_tiles", False),
+                min_zoom= config.get("min_zoom", 0),
+                max_zoom=config.get("max_zoom", None),
+                bounds=config.get("bounds", None),
+                gaussian_blur_sigma=config.get("gaussian_blur_sigma", 0.2),
+                processes=workers,
+                bounds_source = config.get("bounds_source", None)
+            )
 
-    else:
-        raise ValueError(
-            "{} output filetype not supported".format(dst_path.split(".")[-1])
-        )
+        merger.process_all(min_zoom=config.get("min_zoom", 0), verbose = verbose)
+    except Exception as e:
+        logging.error(f"An error occured: {e}")
+
+if __name__ == "__main__":
+    main_group()
