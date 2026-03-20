@@ -287,7 +287,8 @@ class TerrainRGBMerger:
                 if result is None:
                     result = resampled_data
                 else:
-                    mask = ~np.isnan(resampled_data)
+                    # Only fill positions where result (higher-priority sources) has no data
+                    mask = np.isnan(result) & ~np.isnan(resampled_data)
                     if np.any(mask):
                         result[mask] = resampled_data[mask]
 
